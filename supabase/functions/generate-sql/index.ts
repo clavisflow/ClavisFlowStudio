@@ -1,5 +1,6 @@
 import { handleError, HttpError, json, options, bodyJson } from "../_shared/http.ts";
 import { assertSafeSql } from "../_shared/validation.ts";
+import { enforceRateLimit } from "../_shared/rate-limit.ts";
 
 Deno.serve(async (request) => {
   const preflight = options(request); if (preflight) return preflight;
@@ -12,6 +13,7 @@ Deno.serve(async (request) => {
     const baseUrl = (Deno.env.get("OPENAI_COMPATIBLE_BASE_URL") ?? "https://api.openai.com/v1").replace(/\/$/, "");
     const apiKey = Deno.env.get("OPENAI_COMPATIBLE_API_KEY");
     if (!apiKey) throw new HttpError(503, "AI APIが設定されていません。");
+    await enforceRateLimit(request, "generate-sql");
     const response = await fetch(`${baseUrl}/chat/completions`, {
       method: "POST",
       headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },

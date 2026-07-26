@@ -236,6 +236,7 @@ export function FlowRunner() {
         <details className="flow-details">
           <summary>処理内容と必要な列を確認<ChevronDown className="flow-details-chevron" size={17} aria-hidden="true" /></summary>
           <div className="flow-details-body">
+            {flow.instruction && <p><strong>処理内容</strong>：{flow.instruction}</p>}
             {flow.inputs.map((input) => (
               <p key={input.id}><strong>{input.label}</strong>：{input.requiredColumns.filter((column) => column.required).map((column) => column.name).join("、")}</p>
             ))}

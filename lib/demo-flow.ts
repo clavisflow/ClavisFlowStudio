@@ -6,6 +6,7 @@ export const demoFlow: PublicFlow = {
   publicId: DEMO_PUBLIC_ID,
   name: "請求・入金チェック",
   description: "請求番号で請求CSVと入金CSVを照合し、一致・金額不一致・未入金・請求なし入金に分類します。",
+  instruction: "請求データと入金データを請求番号で突き合わせて、入金済み、金額違い、未入金、請求のない入金が分かるようにして。",
   version: 1,
   inputs: [
     {

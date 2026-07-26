@@ -4,6 +4,7 @@ out/
 .env
 .env.local
 supabase/.env
+supabase/.temp/
 public/duckdb/
 samples/payments-cp932.csv
 *.tsbuildinfo

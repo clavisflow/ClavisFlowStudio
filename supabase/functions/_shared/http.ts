@@ -1,5 +1,5 @@
 export class HttpError extends Error {
-  constructor(public status: number, message: string) { super(message); }
+  constructor(public status: number, message: string, public headers: Record<string, string> = {}) { super(message); }
 }
 
 export function corsHeaders(request: Request): Record<string, string> {
@@ -10,7 +10,8 @@ export function corsHeaders(request: Request): Record<string, string> {
     : allowed.split(",")[0].trim();
   return {
     "Access-Control-Allow-Origin": origin,
-    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-edit-token",
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-edit-token, x-clavis-client-id",
+    "Access-Control-Expose-Headers": "Retry-After",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Content-Type": "application/json; charset=utf-8",
     "Vary": "Origin",
@@ -21,15 +22,15 @@ export function options(request: Request): Response | undefined {
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders(request) });
 }
 
-export function json(request: Request, body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: corsHeaders(request) });
+export function json(request: Request, body: unknown, status = 200, headers: Record<string, string> = {}): Response {
+  return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders(request), ...headers } });
 }
 
 export function handleError(request: Request, error: unknown): Response {
   const status = error instanceof HttpError ? error.status : 500;
   const message = error instanceof Error ? error.message : "Unexpected error";
   if (status === 500) console.error(error);
-  return json(request, { error: status === 500 ? "サーバー処理に失敗しました。" : message }, status);
+  return json(request, { error: status === 500 ? "サーバー処理に失敗しました。" : message }, status, error instanceof HttpError ? error.headers : {});
 }
 
 export async function bodyJson(request: Request): Promise<Record<string, unknown>> {

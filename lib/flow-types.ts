@@ -28,6 +28,7 @@ export interface PublicFlow {
   publicId: string;
   name: string;
   description: string;
+  instruction?: string;
   version: number;
   inputs: FlowInput[];
   sql: string;

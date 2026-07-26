@@ -1,7 +1,8 @@
-import { getBundledDemo } from "./demo-flow";
-import type { FlowDraft, FlowStatus, ManagedFlow, PublicFlow } from "./flow-types";
+import { getBundledDemo } from "./demo-flow.ts";
+import type { FlowDraft, FlowStatus, ManagedFlow, PublicFlow } from "./flow-types.ts";
 
 const STORAGE_KEY = "clavisflow-studio:managed-flows:v1";
+const CLIENT_ID_KEY = "clavisflow-studio:anonymous-client-id:v1";
 
 function supabaseUrl() {
   return process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/$/, "");
@@ -29,12 +30,25 @@ function upsert(flow: ManagedFlow) {
   writeAll(flows);
 }
 
+function anonymousClientId(): string {
+  const existing = localStorage.getItem(CLIENT_ID_KEY);
+  if (existing && /^[a-f0-9]{32}$/i.test(existing)) return existing.toLowerCase();
+  const created = crypto.randomUUID().replaceAll("-", "");
+  localStorage.setItem(CLIENT_ID_KEY, created);
+  return created;
+}
+
 async function edge<T>(functionName: string, init: RequestInit = {}, query = ""): Promise<T> {
   const baseUrl = supabaseUrl();
   if (!baseUrl) throw new Error("Supabase is not configured");
   const response = await fetch(`${baseUrl}/functions/v1/${functionName}${query}`, {
     ...init,
-    headers: { Accept: "application/json", "Content-Type": "application/json", ...init.headers },
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      "x-clavis-client-id": anonymousClientId(),
+      ...init.headers,
+    },
   });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(body.error ?? "フローAPIの呼び出しに失敗しました。");
@@ -72,7 +86,17 @@ export async function createManagedFlow(draft: FlowDraft, publish: boolean): Pro
     });
     publicId = created.publicId;
     editToken = created.editToken;
-    if (publish) await setRemotePublication(publicId, editToken, 1, true);
+    const savedDraft: ManagedFlow = { ...draft, publicId, editToken, status: "draft", version: created.version, createdAt: now, updatedAt: now };
+    upsert(savedDraft);
+    if (!publish) return savedDraft;
+    try {
+      await setRemotePublication(publicId, editToken, created.version, true);
+    } catch (error) {
+      throw publicationFailure(error);
+    }
+    const published: ManagedFlow = { ...savedDraft, status: "published", updatedAt: new Date().toISOString() };
+    upsert(published);
+    return published;
   }
 
   const flow: ManagedFlow = { ...draft, publicId, editToken, status: publish ? "published" : "draft", version: 1, createdAt: now, updatedAt: now };
@@ -89,11 +113,26 @@ export async function updateManagedFlow(existing: ManagedFlow, draft: FlowDraft,
       body: JSON.stringify({ publicId: existing.publicId, ...draft }),
     });
     version = updated.version;
-    await setRemotePublication(existing.publicId, existing.editToken, version, publish);
+    const savedChanges: ManagedFlow = { ...existing, ...draft, version, status: "unpublished", updatedAt: new Date().toISOString() };
+    upsert(savedChanges);
+    if (!publish) return savedChanges;
+    try {
+      await setRemotePublication(existing.publicId, existing.editToken, version, true);
+    } catch (error) {
+      throw publicationFailure(error);
+    }
+    const published: ManagedFlow = { ...savedChanges, status: "published", updatedAt: new Date().toISOString() };
+    upsert(published);
+    return published;
   }
   const flow: ManagedFlow = { ...existing, ...draft, version, status: publish ? "published" : "unpublished", updatedAt: new Date().toISOString() };
   upsert(flow);
   return flow;
+}
+
+function publicationFailure(error: unknown) {
+  const detail = error instanceof Error ? error.message : "公開処理に失敗しました。";
+  return new Error(`フロー定義は保存されましたが公開できませんでした。作成済フローから編集を再開できます。 ${detail}`, { cause: error });
 }
 
 export async function setManagedFlowPublished(flow: ManagedFlow, publish: boolean): Promise<ManagedFlow> {
@@ -171,6 +210,7 @@ function localPublicFlow(publicId: string): PublicFlow | undefined {
     publicId: flow.publicId,
     name: flow.name,
     description: flow.description,
+    instruction: flow.instruction,
     version: flow.version,
     inputs: flow.inputs,
     sql: flow.sql,

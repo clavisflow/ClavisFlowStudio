@@ -80,11 +80,17 @@ npx supabase link --project-ref YOUR_PROJECT_REF
 npx supabase db push
 ```
 
-3. Edge Function用シークレットを`supabase/.env`へ作成します。`SUPABASE_URL`と`SUPABASE_SERVICE_ROLE_KEY`はSupabase側で自動提供されるため、本番用の手動登録は不要です。それ以外を登録します。
+3. Edge Function用シークレットを`supabase/.env`へ作成します。`SUPABASE_URL`と`SUPABASE_SERVICE_ROLE_KEY`はSupabase側で自動提供されるため、本番用の手動登録は不要です。
 
 ```dotenv
-ALLOWED_ORIGIN=https://studio.clavisflow.net
+ALLOWED_ORIGIN=http://localhost:3000,https://studio.clavisflow.net
 PUBLIC_APP_URL=https://studio.clavisflow.net
+RATE_LIMIT_HASH_SECRET=32文字以上のランダムな秘密値
+```
+
+AI生成を有効にする場合だけ、同じファイルへOpenAI互換APIの設定を追加します。
+
+```dotenv
 OPENAI_COMPATIBLE_BASE_URL=https://api.openai.com/v1
 OPENAI_COMPATIBLE_API_KEY=replace-me
 OPENAI_COMPATIBLE_MODEL=gpt-5-mini
@@ -103,6 +109,7 @@ npx supabase functions deploy publish-flow
 npx supabase functions deploy get-public-flow
 npx supabase functions deploy get-edit-flow
 npx supabase functions deploy unpublish-flow
+npx supabase functions deploy delete-flow
 npx supabase functions deploy generate-sql
 ```
 
@@ -118,15 +125,31 @@ Service RoleキーとAI APIキーには`NEXT_PUBLIC_`を付けないでくださ
 
 | 関数 | メソッド | 認可 |
 |---|---|---|
-| `create-flow` | POST | 公開（MVP。運用前にレート制限／Turnstile推奨） |
+| `create-flow` | POST | 公開（ブラウザID・IP・全体件数で制限） |
 | `update-flow` | POST | `x-edit-token` |
 | `publish-flow` | POST | `x-edit-token` |
 | `get-public-flow?id=...` | GET | 公開済みFlowのみ匿名 |
 | `get-edit-flow` | POST | `x-edit-token` |
 | `unpublish-flow` | POST | `x-edit-token` |
-| `generate-sql` | POST | 公開（MVP。運用前にレート制限必須） |
+| `generate-sql` | POST | 公開（ブラウザID・IP・全体件数で制限） |
 
 作成・更新の定義本文は`inputs`, `sql`, `output`, `duckdbVersion`です。更新は常に次の`flow_versions.version_number`を挿入し、既存公開版を変更しません。
+
+### 匿名APIの利用回数制限
+
+`create-flow`と`generate-sql`は、Supabase PostgreSQLの`api_rate_limit_buckets`で固定時間枠ごとの回数を管理します。フロントエンドがlocalStorageに作る匿名ブラウザIDと接続元IPを併用し、会社などで同じIPを共有する利用者を過度に制限しない構成です。識別値は`RATE_LIMIT_HASH_SECRET`を使ったHMAC-SHA-256だけをDBへ保存し、生のIPアドレスは保存しません。
+
+| API | ブラウザ単位 | IP単位 | サービス全体 |
+|---|---|---|---|
+| `create-flow` | 10分3回、1日20回 | 10分10回、1日100回 | 1日500回 |
+| `generate-sql` | 1分2回、1時間10回、1日30回 | 1分6回、1時間60回、1日150回 | 1日100回 |
+
+- 超過時は`429 Too Many Requests`と`Retry-After`を返します。
+- 制限判定DBが利用できない場合は、未制限で処理を続けず`503`を返します。
+- 期限切れカウンターはDB関数内で確率的に削除するため、`pg_cron`は不要です。
+- 制限値は`supabase/functions/_shared/rate-limit.ts`に集約しています。利用状況を確認して調整してください。
+- AIの自動テストでは実APIを呼ばず、モックを使用します。AIを本番有効化する段階ではTurnstileの追加も検討します。
+- 将来カウンター負荷が増えた場合は、Edge Function側の共通判定処理をUpstash Redisなどへ差し替えられます。
 
 ## Azure Static Web Appsへ配備
 
@@ -143,7 +166,7 @@ Service RoleキーとAI APIキーには`NEXT_PUBLIC_`を付けないでくださ
 - SQL検査は保守的な字句／構造検査です。`SELECT` / `WITH`の単一文だけを許可し、DDL、DML、`COPY`、`ATTACH`、`INSTALL`、`LOAD`、`PRAGMA`、外部readerを拒否します。
 - DuckDB-WasmにはOSファイルシステムがありませんが、公開前の防御として検査を必須にしています。新しいDuckDB機能を導入する際は拒否リストとテストを更新してください。
 - CSPの`connect-src`はSupabaseだけを許可します。別のSupabase互換ドメインを使う場合は`public/staticwebapp.config.json`を更新します。
-- 作成とAI生成は匿名MVPエンドポイントです。本番公開前にIP/トークン単位のレート制限とTurnstile等のbot対策を追加してください。
+- 作成とAI生成は匿名エンドポイントのため、ブラウザID・IP・サービス全体の回数制限を適用しています。bot判定が必要になった段階でTurnstileを追加してください。
 - 最大入力は1ファイル250MB、最大出力は100万行です。ブラウザごとのWasmメモリ制限が先に到達する場合があります。
 
 ## 次の実装

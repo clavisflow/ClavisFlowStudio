@@ -10,7 +10,7 @@ Deno.serve(async (request) => {
     const token = request.headers.get("x-edit-token") ?? String(body.editToken ?? "");
     const { db, flow } = await requireEditor(publicId, token);
     const { data: version, error } = await db.from("flow_versions")
-      .select("version_number,input_definition,sql,output_definition,duckdb_version")
+      .select("version_number,instruction,input_definition,sql,output_definition,duckdb_version")
       .eq("flow_id", flow.id)
       .order("version_number", { ascending: false })
       .limit(1)
@@ -22,6 +22,7 @@ Deno.serve(async (request) => {
       description: flow.description,
       status: flow.status,
       version: version.version_number,
+      instruction: version.instruction,
       inputs: version.input_definition,
       sql: version.sql,
       output: version.output_definition,

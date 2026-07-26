@@ -720,7 +720,7 @@ function prepareDraft(draft: FlowDraft, fileStates: Record<string, EditorFileSta
     })),
     output: {
       ...draft.output,
-      enabled: true,
+      enabled: downloadEnabled,
       fileName: downloadEnabled ? draft.output.fileName.trim() || "result.csv" : "result.csv",
       encoding: downloadEnabled ? draft.output.encoding : "utf-8-bom",
     },
