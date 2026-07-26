@@ -48,7 +48,7 @@ button, select, label { -webkit-tap-highlight-color: transparent; }
 .capabilities-overlay { position: fixed; z-index: 100; inset: 0; display: flex; justify-content: flex-end; background: rgb(32 36 32 / 20%); }
 .capabilities-panel { width: min(460px, 100%); height: 100%; padding: 24px 30px; overflow-y: auto; border-left: 1px solid var(--border); background: #fdfcf9; box-shadow: -8px 0 24px rgb(32 36 32 / 8%); }
 .capabilities-panel > header { min-height: 44px; display: flex; align-items: center; justify-content: space-between; gap: 20px; border-bottom: 1px solid var(--border); }
-.capabilities-panel h2 { margin: 0; font-size: 21px; font-weight: 650; }
+.capabilities-panel h2 { margin: 0; display: inline-flex; align-items: center; gap: 9px; font-size: 21px; font-weight: 650; }
 .capabilities-panel header button { width: 40px; height: 40px; display: grid; place-items: center; border: 0; color: var(--text); background: transparent; cursor: pointer; }
 .capabilities-overview { margin: 22px 0 24px; color: var(--text); font-size: 16px; line-height: 1.7; font-weight: 600; }
 .capability-stages { border-top: 1px solid var(--border); }
@@ -57,14 +57,14 @@ button, select, label { -webkit-tap-highlight-color: transparent; }
 .capability-stage > header span { color: var(--primary-dark); font-size: 13px; letter-spacing: .06em; font-weight: 650; }
 .capability-stage h3 { margin: 0; font-size: 17px; font-weight: 650; }
 .capability-stage p { margin: 8px 0 0 34px; color: var(--muted); font-size: 15px; line-height: 1.7; }
-.capabilities-safety { margin-top: 24px; padding: 14px; display: flex; align-items: flex-start; gap: 10px; border-radius: 6px; background: var(--surface); }
-.capabilities-safety > svg { margin-top: 2px; flex: none; color: var(--muted); }
+.capabilities-safety { margin-top: 24px; padding: 14px; display: flex; align-items: flex-start; gap: 10px; border: 1px solid #cfe4d7; border-radius: 6px; background: #eef8f2; }
+.capabilities-safety > svg { margin-top: 2px; flex: none; color: var(--success); }
 .capabilities-safety strong { display: block; font-size: 14px; font-weight: 650; }
 .capabilities-safety p { margin: 2px 0 0; color: var(--muted); font-size: 14px; line-height: 1.6; }
 .saved-flows-overlay { position: fixed; z-index: 100; inset: 0; display: flex; justify-content: flex-end; background: rgb(32 36 32 / 20%); }
 .saved-flows-panel { width: min(540px, 100%); height: 100%; padding: 24px 30px; overflow-y: auto; border-left: 1px solid var(--border); background: #fdfcf9; box-shadow: -8px 0 24px rgb(32 36 32 / 8%); }
 .saved-flows-panel > header { min-height: 44px; display: flex; align-items: center; justify-content: space-between; gap: 20px; border-bottom: 1px solid var(--border); }
-.saved-flows-panel h2 { margin: 0; font-size: 21px; font-weight: 650; }
+.saved-flows-panel h2 { margin: 0; display: inline-flex; align-items: center; gap: 9px; font-size: 21px; font-weight: 650; }
 .saved-flows-panel > header button { width: 40px; height: 40px; display: grid; place-items: center; border: 0; color: var(--text); background: transparent; cursor: pointer; }
 .saved-flows-empty { margin: 28px 0 0; color: var(--muted); font-size: 15px; }
 .saved-flows-error { margin-top: 18px; padding: 12px 14px; border-left: 4px solid var(--warning); color: #7d2e1c; background: #fff8f6; font-size: 15px; }
@@ -89,7 +89,7 @@ button, select, label { -webkit-tap-highlight-color: transparent; }
 .samples-overlay { position: fixed; z-index: 100; inset: 0; display: flex; justify-content: flex-end; background: rgb(32 36 32 / 20%); }
 .samples-panel { width: min(600px, 100%); height: 100%; padding: 24px 30px; overflow-y: auto; border-left: 1px solid var(--border); background: #fdfcf9; box-shadow: -8px 0 24px rgb(32 36 32 / 8%); }
 .samples-panel > header { min-height: 44px; display: flex; align-items: center; justify-content: space-between; gap: 20px; border-bottom: 1px solid var(--border); }
-.samples-panel h2 { margin: 0; font-size: 21px; font-weight: 650; }
+.samples-panel h2 { margin: 0; display: inline-flex; align-items: center; gap: 9px; font-size: 21px; font-weight: 650; }
 .samples-panel > header button { width: 40px; height: 40px; display: grid; place-items: center; border: 0; color: var(--text); background: transparent; cursor: pointer; }
 .samples-overview { margin: 20px 0 10px; color: var(--muted); font-size: 15px; }
 .sample-row { padding: 19px 0; border-bottom: 1px solid var(--border); }

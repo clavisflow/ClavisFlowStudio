@@ -33,7 +33,7 @@ export function SamplesPanel() {
         <div className="samples-overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>
           <aside id="samples-panel" className="samples-panel" role="dialog" aria-modal="true" aria-labelledby="samples-title">
             <header>
-              <h2 id="samples-title">サンプル</h2>
+              <h2 id="samples-title"><FlaskConical size={21} aria-hidden="true" />サンプル</h2>
               <button ref={closeRef} type="button" aria-label="閉じる" onClick={close}><X size={21} aria-hidden="true" /></button>
             </header>
             <p className="samples-overview">処理例を選ぶと、サンプルCSVを使って通常のフロー作成を始められます。</p>

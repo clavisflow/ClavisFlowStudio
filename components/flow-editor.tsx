@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ArrowRight, ChevronDown, ChevronUp, Code2, Copy, Download, ExternalLink, FileSpreadsheet, Link2, RefreshCw, Sparkles, Trash2 } from "lucide-react";
-import { createManagedFlow, editUrl, loadEditableFlow, publicRunUrl, updateManagedFlow } from "@/lib/flow-store";
+import { createManagedFlow, editUrl, loadEditableFlow, publicRunUrl, savedFlowFromPublicationError, updateManagedFlow } from "@/lib/flow-store";
 import type { CsvEncoding, FileAnalysis, FlowDraft, FlowInput, InputColumn, ManagedFlow, QueryResult } from "@/lib/flow-types";
 import { ProcessingClient } from "@/lib/processing-client";
 import { getSampleTemplate, sampleTemplates } from "@/lib/sample-templates";
@@ -399,6 +399,8 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
       setPublishedResult(result);
       setCopiedLink(undefined);
     } catch (saveError) {
+      const savedFlow = savedFlowFromPublicationError(saveError);
+      if (savedFlow) setExisting(savedFlow);
       setError(saveError instanceof Error ? saveError.message : "フローを保存できませんでした。");
     } finally {
       setSaving(false);

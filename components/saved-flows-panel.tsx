@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ExternalLink, Files, Pencil, Trash2, X } from "lucide-react";
+import { ExternalLink, LibraryBig, Pencil, Trash2, X } from "lucide-react";
 import { deleteManagedFlow, editUrl, listManagedFlows, publicRunUrl } from "@/lib/flow-store";
 import type { ManagedFlow } from "@/lib/flow-types";
 
@@ -54,13 +54,13 @@ export function SavedFlowsPanel() {
   return (
     <>
       <button ref={triggerRef} type="button" className="saved-flows-trigger" aria-expanded={open} aria-controls="saved-flows-panel" onClick={openPanel}>
-        <Files size={17} aria-hidden="true" />作成済フロー
+        <LibraryBig size={17} aria-hidden="true" />作成済フロー
       </button>
       {open && (
         <div className="saved-flows-overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>
           <aside id="saved-flows-panel" className="saved-flows-panel" role="dialog" aria-modal="true" aria-labelledby="saved-flows-title">
             <header>
-              <h2 id="saved-flows-title">作成済フロー</h2>
+              <h2 id="saved-flows-title"><LibraryBig size={21} aria-hidden="true" />作成済フロー</h2>
               <button ref={closeRef} type="button" aria-label="閉じる" onClick={close}><X size={21} aria-hidden="true" /></button>
             </header>
             {error && <div className="saved-flows-error">{error}</div>}

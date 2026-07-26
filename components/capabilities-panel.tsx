@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { CircleHelp, ShieldCheck, X } from "lucide-react";
+import { Info as CircleInfo, ShieldCheck, X } from "lucide-react";
 
 const stages = [
   {
@@ -47,13 +47,13 @@ export function CapabilitiesPanel() {
   return (
     <>
       <button ref={triggerRef} type="button" className="capabilities-trigger" aria-expanded={open} aria-controls="capabilities-panel" onClick={() => setOpen(true)}>
-        <CircleHelp size={17} aria-hidden="true" />できること
+        <CircleInfo size={17} aria-hidden="true" />できること
       </button>
       {open && (
         <div className="capabilities-overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>
           <aside id="capabilities-panel" className="capabilities-panel" role="dialog" aria-modal="true" aria-labelledby="capabilities-title">
             <header>
-              <h2 id="capabilities-title">できること</h2>
+              <h2 id="capabilities-title"><CircleInfo size={21} aria-hidden="true" />できること</h2>
               <button ref={closeRef} type="button" aria-label="閉じる" onClick={close}><X size={21} aria-hidden="true" /></button>
             </header>
             <p className="capabilities-overview">CSVから、繰り返し使えるデータ処理ページを作成できます。</p>

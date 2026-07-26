@@ -40,8 +40,11 @@ test("a remotely saved draft remains editable when initial publication fails", a
   };
 
   try {
-    const { createManagedFlow, listManagedFlows } = await import("../lib/flow-store.ts");
-    await assert.rejects(() => createManagedFlow(draft, true), /作成済フローから編集を再開できます/);
+    const { createManagedFlow, listManagedFlows, savedFlowFromPublicationError } = await import("../lib/flow-store.ts");
+    await assert.rejects(() => createManagedFlow(draft, true), (error: unknown) => {
+      assert.equal(savedFlowFromPublicationError(error)?.publicId, "saved-draft-123");
+      return true;
+    });
     const saved = listManagedFlows();
     assert.equal(saved.length, 1);
     assert.equal(saved[0].publicId, "saved-draft-123");
@@ -49,7 +52,7 @@ test("a remotely saved draft remains editable when initial publication fails", a
     assert.equal(saved[0].status, "draft");
     assert.equal(saved[0].output.enabled, false);
     assert.match(clientIds[0], /^[a-f0-9]{32}$/);
-    assert.deepEqual(clientIds, [clientIds[0], clientIds[0]]);
+    assert.deepEqual(clientIds, [clientIds[0], ""]);
   } finally {
     globalThis.fetch = originalFetch;
     if (originalUrl === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -80,8 +83,13 @@ test("an unpublished update remains editable when publishing its new version fai
 
   const existing: ManagedFlow = { ...draft, publicId: "published-flow-123", editToken: "secret-token", status: "published", version: 1, createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z" };
   try {
-    const { listManagedFlows, updateManagedFlow } = await import("../lib/flow-store.ts");
-    await assert.rejects(() => updateManagedFlow(existing, { ...draft, name: "更新版" }, true), /作成済フローから編集を再開できます/);
+    const { listManagedFlows, savedFlowFromPublicationError, updateManagedFlow } = await import("../lib/flow-store.ts");
+    await assert.rejects(() => updateManagedFlow(existing, { ...draft, name: "更新版" }, true), (error: unknown) => {
+      const saved = savedFlowFromPublicationError(error);
+      assert.equal(saved?.version, 2);
+      assert.equal(saved?.status, "unpublished");
+      return true;
+    });
     const saved = listManagedFlows();
     assert.equal(saved.length, 1);
     assert.equal(saved[0].version, 2);

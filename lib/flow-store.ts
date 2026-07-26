@@ -41,14 +41,15 @@ function anonymousClientId(): string {
 async function edge<T>(functionName: string, init: RequestInit = {}, query = ""): Promise<T> {
   const baseUrl = supabaseUrl();
   if (!baseUrl) throw new Error("Supabase is not configured");
+  const headers = new Headers(init.headers);
+  if (!headers.has("Accept")) headers.set("Accept", "application/json");
+  if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+  if (functionName === "create-flow" || functionName === "generate-sql") {
+    headers.set("x-clavis-client-id", anonymousClientId());
+  }
   const response = await fetch(`${baseUrl}/functions/v1/${functionName}${query}`, {
     ...init,
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-      "x-clavis-client-id": anonymousClientId(),
-      ...init.headers,
-    },
+    headers,
   });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(body.error ?? "フローAPIの呼び出しに失敗しました。");
@@ -92,7 +93,7 @@ export async function createManagedFlow(draft: FlowDraft, publish: boolean): Pro
     try {
       await setRemotePublication(publicId, editToken, created.version, true);
     } catch (error) {
-      throw publicationFailure(error);
+      throw publicationFailure(error, savedDraft);
     }
     const published: ManagedFlow = { ...savedDraft, status: "published", updatedAt: new Date().toISOString() };
     upsert(published);
@@ -119,7 +120,7 @@ export async function updateManagedFlow(existing: ManagedFlow, draft: FlowDraft,
     try {
       await setRemotePublication(existing.publicId, existing.editToken, version, true);
     } catch (error) {
-      throw publicationFailure(error);
+      throw publicationFailure(error, savedChanges);
     }
     const published: ManagedFlow = { ...savedChanges, status: "published", updatedAt: new Date().toISOString() };
     upsert(published);
@@ -130,9 +131,17 @@ export async function updateManagedFlow(existing: ManagedFlow, draft: FlowDraft,
   return flow;
 }
 
-function publicationFailure(error: unknown) {
+function publicationFailure(error: unknown, savedFlow: ManagedFlow) {
   const detail = error instanceof Error ? error.message : "公開処理に失敗しました。";
-  return new Error(`フロー定義は保存されましたが公開できませんでした。作成済フローから編集を再開できます。 ${detail}`, { cause: error });
+  return Object.assign(
+    new Error(`フロー定義は保存されましたが公開できませんでした。もう一度「変更を公開」を押すか、作成済フローから再開してください。 ${detail}`, { cause: error }),
+    { savedFlow },
+  );
+}
+
+export function savedFlowFromPublicationError(error: unknown): ManagedFlow | undefined {
+  if (!(error instanceof Error) || !("savedFlow" in error)) return undefined;
+  return (error as Error & { savedFlow?: ManagedFlow }).savedFlow;
 }
 
 export async function setManagedFlowPublished(flow: ManagedFlow, publish: boolean): Promise<ManagedFlow> {
