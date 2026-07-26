@@ -1,0 +1,30 @@
+project_id = "clavisflow-studio"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+
+[db]
+port = 54322
+major_version = 17
+
+[studio]
+enabled = true
+port = 54323
+
+[functions.create-flow]
+verify_jwt = false
+[functions.update-flow]
+verify_jwt = false
+[functions.publish-flow]
+verify_jwt = false
+[functions.get-public-flow]
+verify_jwt = false
+[functions.get-edit-flow]
+verify_jwt = false
+[functions.unpublish-flow]
+verify_jwt = false
+[functions.generate-sql]
+verify_jwt = false

@@ -1,0 +1,10 @@
+node_modules/
+.next/
+out/
+.env
+.env.local
+supabase/.env
+public/duckdb/
+samples/payments-cp932.csv
+*.tsbuildinfo
+Thumbs.db
