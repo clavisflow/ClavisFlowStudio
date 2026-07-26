@@ -3,14 +3,10 @@
   "configurations": [
     {
       "name": "Next.js: debug full stack (F5)",
-      "type": "node",
+      "type": "node-terminal",
       "request": "launch",
-      "program": "${workspaceFolder}/node_modules/next/dist/bin/next",
-      "args": ["dev"],
-      "runtimeArgs": ["--inspect"],
+      "command": "npm run dev",
       "cwd": "${workspaceFolder}",
-      "console": "integratedTerminal",
-      "skipFiles": ["<node_internals>/**"],
       "serverReadyAction": {
         "action": "debugWithEdge",
         "killOnServerStop": true,
@@ -18,20 +14,6 @@
         "uriFormat": "%s",
         "webRoot": "${workspaceFolder}"
       }
-    },
-    {
-      "name": "Next.js: debug server only",
-      "type": "node-terminal",
-      "request": "launch",
-      "command": "npm run dev -- --inspect",
-      "cwd": "${workspaceFolder}"
-    },
-    {
-      "name": "Next.js: debug browser only",
-      "type": "msedge",
-      "request": "launch",
-      "url": "http://localhost:3000",
-      "webRoot": "${workspaceFolder}"
     }
   ]
 }

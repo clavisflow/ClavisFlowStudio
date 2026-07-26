@@ -38,6 +38,7 @@ export interface PublicFlow {
 export interface FlowDraft {
   name: string;
   description: string;
+  instruction?: string;
   inputs: FlowInput[];
   sql: string;
   output: FlowOutput;

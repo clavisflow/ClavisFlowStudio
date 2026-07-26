@@ -26,5 +26,7 @@ verify_jwt = false
 verify_jwt = false
 [functions.unpublish-flow]
 verify_jwt = false
+[functions.delete-flow]
+verify_jwt = false
 [functions.generate-sql]
 verify_jwt = false

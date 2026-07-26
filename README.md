@@ -55,7 +55,7 @@ npm run dev
 
 Supabaseを接続しない場合も、`http://localhost:3000/run/?flow=invoice-payment-check`は同梱デモ定義へフォールバックします。請求CSVには`請求番号,請求金額`、入金CSVには`請求番号,入金額`が必要です。
 
-動作確認用にUTF-8の請求CSVを同梱しています。CP932の入金CSVは次のコマンドで生成できます（バイナリ差分をGit管理しないため生成方式です）。
+画面から選択・ダウンロードできる各文字コードのサンプルCSVは、次のコマンドで再生成できます。
 
 ```bash
 npm run samples

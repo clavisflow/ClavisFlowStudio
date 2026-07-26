@@ -1,0 +1,6 @@
+﻿顧客ID,氏名,メールアドレス,電話番号
+C-001,佐藤商店,sato@example.jp,03-1234-5678
+C-002,鈴木物産,,06-2345-6789
+C-002,鈴木物産,suzuki@example.jp,
+C-003,,tanaka@example.jp,052-345-6789
+C-004,高橋工業,takahashi@example.jp,045-456-7890

@@ -49,6 +49,17 @@ export function findManagedFlow(publicId: string): ManagedFlow | undefined {
   return readAll().find((flow) => flow.publicId === publicId);
 }
 
+export async function deleteManagedFlow(flow: ManagedFlow): Promise<void> {
+  if (supabaseUrl()) {
+    await edge("delete-flow", {
+      method: "POST",
+      headers: { "x-edit-token": flow.editToken },
+      body: JSON.stringify({ publicId: flow.publicId }),
+    });
+  }
+  writeAll(readAll().filter((candidate) => candidate.publicId !== flow.publicId));
+}
+
 export async function createManagedFlow(draft: FlowDraft, publish: boolean): Promise<ManagedFlow> {
   const now = new Date().toISOString();
   let publicId = crypto.randomUUID().replaceAll("-", "").slice(0, 20);
@@ -106,7 +117,7 @@ export async function loadEditableFlow(publicId: string, token?: string): Promis
   if (!token) throw new Error("編集トークンがありません。編集用URLを確認してください。");
   const remote = await edge<{
     publicId: string; name: string; description: string; status: FlowStatus; version: number;
-    inputs: FlowDraft["inputs"]; sql: string; output: FlowDraft["output"]; duckdbVersion: string;
+    instruction?: string; inputs: FlowDraft["inputs"]; sql: string; output: FlowDraft["output"]; duckdbVersion: string;
   }>("get-edit-flow", {
     method: "POST",
     headers: { "x-edit-token": token },

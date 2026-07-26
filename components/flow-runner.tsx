@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type DragEvent } from "react";
-import { FileSpreadsheet, Upload } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { getBundledSampleFiles } from "@/lib/demo-flow";
 import type { CsvEncoding, FileAnalysis, PublicFlow, QueryResult } from "@/lib/flow-types";
 import { loadPublicFlow } from "@/lib/flow-store";
@@ -190,24 +190,28 @@ export function FlowRunner() {
   }
 
   async function runDemoSample() {
-    if (!flow) return;
+    if (!flow || !client.current) return;
     const sampleContents = getBundledSampleFiles(flow.publicId);
     if (!sampleContents) throw new Error("このフローにはサンプルデータがありません。");
     const sampleStates: Record<string, FileState> = {};
-    const selected = flow.inputs.map((input) => {
+    const selected = await Promise.all(flow.inputs.map(async (input) => {
       const sample = sampleContents[input.tableName];
       if (!sample) throw new Error("このフローにはサンプルデータがありません。");
-      const file = new File([sample.text], sample.name, { type: "text/csv;charset=utf-8" });
+      const response = await fetch(sample.url);
+      if (!response.ok) throw new Error(`${sample.name}を読み込めませんでした。`);
+      const file = new File([await response.arrayBuffer()], sample.name, { type: "text/csv" });
+      const analysis = await client.current!.analyze(file, "auto", input.delimiter, input.headerRow ?? 1);
       files.current[input.id] = file;
       sampleStates[input.id] = {
         name: file.name,
         size: file.size,
-        encoding: "utf-8",
-        status: "ready",
-        analysis: { detectedEncoding: "utf-8", effectiveEncoding: "utf-8", headers: sample.headers, rowCount: Math.max(0, sample.text.trim().split(/\r?\n/).length - 1), columnTypes: sample.headers.map(() => "VARCHAR"), replacementCount: 0 },
+        encoding: "auto",
+        status: analysis.warning ? "error" : "ready",
+        analysis,
+        error: analysis.warning,
       };
-      return { tableName: input.tableName, file, encoding: "utf-8" as const, delimiter: input.delimiter };
-    });
+      return { tableName: input.tableName, file, encoding: "auto" as const, delimiter: input.delimiter };
+    }));
     setFileStates(sampleStates);
     await execute(selected);
   }
@@ -221,7 +225,6 @@ export function FlowRunner() {
 
   const canRun = flow.inputs.every((input) => fileStates[input.id]?.status === "ready" && !fileStates[input.id]?.analysis?.warning);
   const hasBundledSamples = Boolean(getBundledSampleFiles(flow.publicId));
-
   return (
     <main className="tool-shell">
       <header className="flow-header">
@@ -229,66 +232,58 @@ export function FlowRunner() {
           <h1>{flow.name}</h1>
         </div>
         <div className="flow-identity"><span>公開ID {flow.publicId}</span><span>バージョン {flow.version}</span></div>
-        <p>{flow.description}</p>
+        {flow.description && <p>{flow.description}</p>}
         <details className="flow-details">
-          <summary>処理内容と必要な列を確認</summary>
+          <summary>処理内容と必要な列を確認<ChevronDown className="flow-details-chevron" size={17} aria-hidden="true" /></summary>
           <div className="flow-details-body">
             {flow.inputs.map((input) => (
               <p key={input.id}><strong>{input.label}</strong>：{input.requiredColumns.filter((column) => column.required).map((column) => column.name).join("、")}</p>
             ))}
-            <p><strong>結果</strong>：{flow.output.enabled === false ? "画面表示のみ" : flow.output.fileName}</p>
+            <p><strong>結果</strong>：{flow.output.fileName}</p>
           </div>
         </details>
       </header>
 
       <section className="step-content runner-content">
           <div className="section-heading">
-            <h2>処理するCSVを選択</h2>
-            <p>CSVはブラウザ内だけで読み込みます。</p>
+            <h2>CSVを選択</h2>
           </div>
 
           {hasBundledSamples && (
-            <div className="sample-action">
-              <div><strong>サンプルを試す</strong><p>ファイル選択なしで、このフローを実行します。</p></div>
-              <button className="button secondary" disabled={running} onClick={() => void runDemoSample()}>サンプルデータで実行</button>
-            </div>
+            <button className="runner-sample-link" disabled={running} onClick={() => void runDemoSample()}>サンプルで実行</button>
           )}
 
           <div className="runner-file-list">
             {flow.inputs.map((input) => {
               const state = fileStates[input.id] ?? { encoding: "auto" as const, status: "empty" as const };
               return (
-                <article
-                  className={`runner-file-card${dragTargetId === input.id ? " drag-active" : ""}`}
-                  key={input.id}
-                  onDragEnter={(event) => handleDragEnter(input.id, event)}
-                  onDragLeave={(event) => handleDragLeave(input.id, event)}
-                  onDragOver={handleDragOver}
-                  onDrop={(event) => handleDrop(input.id, state.encoding, event)}
-                >
-                  <div className="runner-file-heading">
-                    <span className="runner-file-icon"><FileSpreadsheet size={24} aria-hidden="true" /></span>
-                    <div>
-                      <h3>{input.label}</h3>
-                      <p>必要な列：{input.requiredColumns.filter((column) => column.required).map((column) => column.name).join("、")}</p>
-                      <p className="runner-drop-hint">{dragTargetId === input.id ? "ここにドロップしてください" : "このカードへCSVをドラッグ＆ドロップ"}</p>
+                <article className="runner-file-block" key={input.id}>
+                  <header className="runner-file-heading">
+                    <h3>{input.label}</h3>
+                    <div className="runner-encoding-control">
+                      <label htmlFor={`encoding-${input.id}`}>文字コード</label>
+                      <select id={`encoding-${input.id}`} value={state.encoding} onChange={(event) => changeEncoding(input.id, event.target.value as CsvEncoding)}>
+                        {Object.entries(encodingLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                      </select>
                     </div>
-                  </div>
-                  <label className="runner-file-picker">
-                    <input type="file" accept=".csv,text/csv" onChange={(event) => { const file = event.target.files?.[0]; if (file) void analyze(input.id, file, state.encoding); }} />
-                    <Upload size={19} aria-hidden="true" />
-                    <span>{state.name ?? "CSVファイルを選択"}</span>
-                    <strong>CSVを選択</strong>
-                  </label>
-                  <div className="runner-encoding-control">
-                    <label htmlFor={`encoding-${input.id}`}>文字コード</label>
-                    <select id={`encoding-${input.id}`} value={state.encoding} onChange={(event) => changeEncoding(input.id, event.target.value as CsvEncoding)}>
-                      {Object.entries(encodingLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-                    </select>
+                  </header>
+                  <div
+                    className={`runner-file-dropzone${dragTargetId === input.id ? " drag-active" : ""}`}
+                    onDragEnter={(event) => handleDragEnter(input.id, event)}
+                    onDragLeave={(event) => handleDragLeave(input.id, event)}
+                    onDragOver={handleDragOver}
+                    onDrop={(event) => handleDrop(input.id, state.encoding, event)}
+                  >
+                    <strong>{dragTargetId === input.id ? "ここにドロップしてください" : "CSVをここにドロップ"}</strong>
+                    <span>または</span>
+                    <label className="button secondary runner-file-button">
+                      <input type="file" accept=".csv,text/csv" onChange={(event) => { const file = event.target.files?.[0]; if (file) void analyze(input.id, file, state.encoding); }} />
+                      ファイルを選択
+                    </label>
                   </div>
                   <div className="runner-file-status" aria-live="polite">
-                    {state.status === "analyzing" && <span><span className="spinner small" />解析中</span>}
-                    {state.status === "ready" && state.analysis && <span className="success-text">確認済み　判定：{encodingLabels[state.analysis.detectedEncoding]}</span>}
+                    {state.status === "analyzing" && <span><span className="spinner small" />{state.name}を解析中</span>}
+                    {state.status === "ready" && state.analysis && <span className="success-text">{state.name}　確認済み・判定：{encodingLabels[state.analysis.detectedEncoding]}</span>}
                     {(state.error || state.analysis?.warning) && <span className="warning-text">{state.error ?? state.analysis?.warning}</span>}
                   </div>
                 </article>
@@ -306,7 +301,7 @@ export function FlowRunner() {
           <div className="runner-result" aria-live="polite">
           <div className="result-toolbar">
             <div><h2>処理結果</h2><p>{result.totalRows.toLocaleString()}件を処理しました（{result.elapsedMs.toLocaleString()}ms）</p></div>
-            {downloadUrl && flow.output.enabled !== false && <a className="button primary" href={downloadUrl} download={flow.output.fileName}>結果CSVをダウンロード</a>}
+            {downloadUrl && <a className="button primary" href={downloadUrl} download={flow.output.fileName}>結果CSVをダウンロード</a>}
           </div>
           <div className="table-wrap">
             <table>

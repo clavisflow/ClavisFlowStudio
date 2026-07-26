@@ -1,4 +1,4 @@
-import type { PublicFlow } from "./flow-types";
+import type { EffectiveEncoding, PublicFlow } from "./flow-types";
 
 export const DEMO_PUBLIC_ID = "invoice-payment-check";
 
@@ -57,20 +57,23 @@ ORDER BY "判定", "請求番号"`,
 
 export interface BundledSampleFile {
   name: string;
-  text: string;
+  url: string;
+  encoding: EffectiveEncoding;
   headers: string[];
 }
 
 const demoSampleFiles: Record<string, BundledSampleFile> = {
   invoices: {
     name: "サンプル請求.csv",
-    text: "請求番号,請求金額\r\nINV-001,12000\r\nINV-002,8500\r\nINV-003,15000\r\nINV-004,4000\r\n",
-    headers: ["請求番号", "請求金額"],
+    url: "/samples/invoices-cp932.csv",
+    encoding: "cp932",
+    headers: ["請求番号", "請求先", "請求金額"],
   },
   payments: {
     name: "サンプル入金.csv",
-    text: "請求番号,入金額\r\nINV-001,12000\r\nINV-002,8000\r\nINV-004,4000\r\nINV-005,3000\r\n",
-    headers: ["請求番号", "入金額"],
+    url: "/samples/payments-utf8-bom.csv",
+    encoding: "utf-8-bom",
+    headers: ["請求番号", "入金日", "入金額"],
   },
 };
 
