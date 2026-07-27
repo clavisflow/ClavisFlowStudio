@@ -8,19 +8,25 @@ import type { CsvEncoding, EffectiveEncoding, FileAnalysis, InputColumn, PublicF
 import { inspectSqlStructure } from "@/lib/sql-safety";
 import { normalizeResultValue, resultColumnKind } from "@/lib/result-format";
 import { buildQueryResult } from "@/lib/query-result";
+import { DUCKDB_ASSET_BASE_PATH } from "@/lib/duckdb-assets";
 
 type AnalyzeMessage = { id: string; type: "analyze"; bytes: ArrayBuffer; encoding: CsvEncoding; delimiter: string; headerRow: number };
+type WarmupMessage = { id: string; type: "warmup" };
 type RunMessage = {
   id: string;
   type: "run";
   flow: PublicFlow;
   files: Array<{ tableName: string; bytes: ArrayBuffer; encoding: CsvEncoding; delimiter: string }>;
 };
-type RequestMessage = AnalyzeMessage | RunMessage;
+type RequestMessage = AnalyzeMessage | WarmupMessage | RunMessage;
+type DuckDbEngine = { db: duckdb.AsyncDuckDB; worker: Worker };
 
 const scope = self as unknown as DedicatedWorkerGlobalScope;
 const MAX_INPUT_BYTES = 250 * 1024 * 1024;
 const MAX_OUTPUT_ROWS = 1_000_000;
+const ENGINE_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
+let enginePromise: Promise<DuckDbEngine> | undefined;
+let engineIdleTimer: ReturnType<typeof setTimeout> | undefined;
 
 scope.onmessage = async (event: MessageEvent<RequestMessage>) => {
   const message = event.data;
@@ -40,6 +46,12 @@ scope.onmessage = async (event: MessageEvent<RequestMessage>) => {
       scope.postMessage({ id: message.id, type: "result", result: analysis });
       return;
     }
+    if (message.type === "warmup") {
+      await getEngine();
+      scheduleEngineRelease();
+      scope.postMessage({ id: message.id, type: "result", result: null });
+      return;
+    }
     scope.postMessage({ id: message.id, type: "progress", phase: "CSVを変換しています" });
     const result = await executeFlow(message);
     scope.postMessage({ id: message.id, type: "result", result }, [result.csv.buffer]);
@@ -48,6 +60,53 @@ scope.onmessage = async (event: MessageEvent<RequestMessage>) => {
     scope.postMessage({ id: message.id, type: "error", error: messageText });
   }
 };
+
+function getEngine(): Promise<DuckDbEngine> {
+  if (!enginePromise) {
+    enginePromise = createEngine().catch((error) => {
+      enginePromise = undefined;
+      throw error;
+    });
+  }
+  if (engineIdleTimer) clearTimeout(engineIdleTimer);
+  engineIdleTimer = undefined;
+  return enginePromise;
+}
+
+async function createEngine(): Promise<DuckDbEngine> {
+  const origin = scope.location.origin;
+  const bundles: duckdb.DuckDBBundles = {
+    mvp: { mainModule: `${origin}${DUCKDB_ASSET_BASE_PATH}/duckdb-mvp.wasm`, mainWorker: `${origin}${DUCKDB_ASSET_BASE_PATH}/duckdb-browser-mvp.worker.js` },
+    eh: { mainModule: `${origin}${DUCKDB_ASSET_BASE_PATH}/duckdb-eh.wasm`, mainWorker: `${origin}${DUCKDB_ASSET_BASE_PATH}/duckdb-browser-eh.worker.js` },
+  };
+  const bundle = await duckdb.selectBundle(bundles);
+  if (!bundle.mainWorker) throw new Error("DuckDB Workerを選択できませんでした。");
+  const worker = new Worker(bundle.mainWorker);
+  const db = new duckdb.AsyncDuckDB(new duckdb.ConsoleLogger(duckdb.LogLevel.WARNING), worker);
+  try {
+    await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
+    return { db, worker };
+  } catch (error) {
+    worker.terminate();
+    throw error;
+  }
+}
+
+function scheduleEngineRelease() {
+  if (engineIdleTimer) clearTimeout(engineIdleTimer);
+  engineIdleTimer = setTimeout(() => { void releaseEngine(); }, ENGINE_IDLE_TIMEOUT_MS);
+}
+
+async function releaseEngine() {
+  const current = enginePromise;
+  enginePromise = undefined;
+  engineIdleTimer = undefined;
+  if (!current) return;
+  try {
+    const engine = await current;
+    try { await engine.db.terminate(); } finally { engine.worker.terminate(); }
+  } catch { /* failed initialization has already released its Worker */ }
+}
 
 function decodeCsv(bytes: Uint8Array, requested: CsvEncoding) {
   if (bytes.byteLength > MAX_INPUT_BYTES) throw new Error("CSVは1ファイル250MB以下にしてください。");
@@ -148,20 +207,10 @@ async function executeFlow(message: RunMessage): Promise<QueryResult> {
   if (!safety.safe) throw new Error(safety.errors.join(" "));
   if (message.files.length !== message.flow.inputs.length) throw new Error("必要なCSVが揃っていません。");
   const started = performance.now();
-  let db: duckdb.AsyncDuckDB | undefined;
-  let engineWorker: Worker | undefined;
+  const { db } = await getEngine();
   let connection: duckdb.AsyncDuckDBConnection | undefined;
+  const registeredFiles: string[] = [];
   try {
-    const origin = scope.location.origin;
-    const bundles: duckdb.DuckDBBundles = {
-      mvp: { mainModule: `${origin}/duckdb/duckdb-mvp.wasm`, mainWorker: `${origin}/duckdb/duckdb-browser-mvp.worker.js` },
-      eh: { mainModule: `${origin}/duckdb/duckdb-eh.wasm`, mainWorker: `${origin}/duckdb/duckdb-browser-eh.worker.js` },
-    };
-    const bundle = await duckdb.selectBundle(bundles);
-    if (!bundle.mainWorker) throw new Error("DuckDB Workerを選択できませんでした。");
-    engineWorker = new Worker(bundle.mainWorker);
-    db = new duckdb.AsyncDuckDB(new duckdb.ConsoleLogger(duckdb.LogLevel.WARNING), engineWorker);
-    await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
     connection = await db.connect();
     await connection.query("SET autoinstall_known_extensions = false");
     await connection.query("SET autoload_known_extensions = false");
@@ -178,9 +227,10 @@ async function executeFlow(message: RunMessage): Promise<QueryResult> {
       if (missing.length) throw new Error(`${input.label}に必須列がありません: ${missing.map((column) => column.name).join("、")}`);
       const fileName = `${input.tableName}.csv`;
       await db.registerFileBuffer(fileName, new TextEncoder().encode(decoded.text));
+      registeredFiles.push(fileName);
       const delimiter = file.delimiter.replaceAll("'", "''");
       const skip = Math.max(0, headerRow - 1);
-      await connection.query(`CREATE VIEW "${input.tableName}" AS SELECT * FROM read_csv_auto('${fileName}', header = true, skip = ${skip}, delim = '${delimiter}', sample_size = -1, normalize_names = false)`);
+      await connection.query(`CREATE OR REPLACE TEMP VIEW "${input.tableName}" AS SELECT * FROM read_csv_auto('${fileName}', header = true, skip = ${skip}, delim = '${delimiter}', sample_size = -1, normalize_names = false)`);
     }
 
     scope.postMessage({ id: message.id, type: "progress", phase: "DuckDBでSQLを実行しています" });
@@ -192,8 +242,10 @@ async function executeFlow(message: RunMessage): Promise<QueryResult> {
     return buildQueryResult(columns, columnKinds, records, table.numRows, message.flow.output.encoding, Math.round(performance.now() - started));
   } finally {
     try { await connection?.close(); } catch { /* best-effort cleanup */ }
-    try { await db?.terminate(); } catch { /* best-effort cleanup */ }
-    engineWorker?.terminate();
+    if (registeredFiles.length) {
+      try { await db.dropFiles(registeredFiles); } catch { /* best-effort cleanup */ }
+    }
+    scheduleEngineRelease();
   }
 }
 

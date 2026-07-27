@@ -1,4 +1,36 @@
 {
+  "routes": [
+    {
+      "route": "/duckdb/1.32.0/duckdb-eh.wasm",
+      "rewrite": "/duckdb/1.32.0/duckdb-eh.wasm.br",
+      "headers": {
+        "Cache-Control": "public, max-age=31536000, immutable",
+        "Content-Encoding": "br",
+        "Content-Type": "application/wasm"
+      }
+    },
+    {
+      "route": "/duckdb/1.32.0/duckdb-mvp.wasm",
+      "rewrite": "/duckdb/1.32.0/duckdb-mvp.wasm.br",
+      "headers": {
+        "Cache-Control": "public, max-age=31536000, immutable",
+        "Content-Encoding": "br",
+        "Content-Type": "application/wasm"
+      }
+    },
+    {
+      "route": "/duckdb/1.32.0/*",
+      "headers": {
+        "Cache-Control": "public, max-age=31536000, immutable"
+      }
+    },
+    {
+      "route": "/_next/static/*",
+      "headers": {
+        "Cache-Control": "public, max-age=31536000, immutable"
+      }
+    }
+  ],
   "globalHeaders": {
     "Content-Security-Policy": "default-src 'self'; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://*.supabase.co; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'",
     "Referrer-Policy": "strict-origin-when-cross-origin",

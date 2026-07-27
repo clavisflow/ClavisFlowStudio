@@ -6,16 +6,30 @@ export class ProcessingClient {
   private worker: Worker | null = null;
   private pending = new Map<string, Pending>();
   private onProgress?: (phase: string) => void;
+  private warmupPromise?: Promise<void>;
 
   constructor(onProgress?: (phase: string) => void) { this.onProgress = onProgress; }
 
-  analyze(file: File, encoding: CsvEncoding, delimiter: string, headerRow = 1): Promise<FileAnalysis> {
-    return this.request("analyze", { bytes: file.arrayBuffer(), encoding, delimiter, headerRow }, 15_000) as Promise<FileAnalysis>;
+  async analyze(file: File, encoding: CsvEncoding, delimiter: string, headerRow = 1): Promise<FileAnalysis> {
+    const result = await this.request("analyze", { bytes: file.arrayBuffer(), encoding, delimiter, headerRow }, 15_000) as FileAnalysis;
+    void this.warmup().catch(() => { /* run() retries initialization and reports an actionable error */ });
+    return result;
   }
 
   run(flow: PublicFlow, files: Array<{ tableName: string; file: File; encoding: CsvEncoding; delimiter: string }>): Promise<QueryResult> {
     const prepared = Promise.all(files.map(async (item) => ({ ...item, bytes: await item.file.arrayBuffer(), file: undefined })));
     return this.request("run", { flow, files: prepared }, 60_000) as Promise<QueryResult>;
+  }
+
+  warmup(): Promise<void> {
+    if (this.warmupPromise) return this.warmupPromise;
+    const promise = this.request("warmup", {}, 60_000).then(() => undefined);
+    this.warmupPromise = promise;
+    promise.then(
+      () => { if (this.warmupPromise === promise) this.warmupPromise = undefined; },
+      () => { if (this.warmupPromise === promise) this.warmupPromise = undefined; },
+    );
+    return promise;
   }
 
   cancel() {
@@ -39,7 +53,7 @@ export class ProcessingClient {
     this.worker.onerror = () => this.dispose(new Error("処理Workerでエラーが発生しました。"));
   }
 
-  private async request(type: "analyze" | "run", raw: Record<string, unknown>, timeoutMs: number): Promise<unknown> {
+  private async request(type: "analyze" | "warmup" | "run", raw: Record<string, unknown>, timeoutMs: number): Promise<unknown> {
     this.ensureWorker();
     const id = crypto.randomUUID();
     const message: Record<string, unknown> = { id, type };
@@ -60,6 +74,7 @@ export class ProcessingClient {
 
   private dispose(error: Error) {
     this.worker?.terminate(); this.worker = null;
+    this.warmupPromise = undefined;
     for (const pending of this.pending.values()) { clearTimeout(pending.timer); pending.reject(error); }
     this.pending.clear();
   }
