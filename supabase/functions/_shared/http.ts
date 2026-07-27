@@ -1,6 +1,6 @@
-export class HttpError extends Error {
-  constructor(public status: number, message: string, public headers: Record<string, string> = {}) { super(message); }
-}
+import { HttpError } from "./errors.ts";
+
+export { HttpError } from "./errors.ts";
 
 export function corsHeaders(request: Request): Record<string, string> {
   const allowed = Deno.env.get("ALLOWED_ORIGIN") ?? "*";

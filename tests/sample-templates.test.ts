@@ -2,15 +2,25 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import iconv from "iconv-lite";
-import { sampleTemplates } from "../lib/sample-templates.ts";
+import { getSampleTemplate, sampleTemplates, visibleSampleTemplates } from "../lib/sample-templates.ts";
 import { inspectSqlStructure } from "../lib/sql-safety.ts";
 
 test("all sample templates contain safe SQL and the declared number of CSV files", () => {
-  assert.equal(sampleTemplates.length, 5);
+  assert.equal(sampleTemplates.length, 6);
+  assert.equal(visibleSampleTemplates.length, 5);
   for (const sample of sampleTemplates) {
     assert.deepEqual(inspectSqlStructure(sample.sql), { safe: true, errors: [] });
     assert.equal(sample.files.length, Number.parseInt(sample.inputSummary, 10));
   }
+});
+
+test("wide result fixture contains 135 rows and 30 columns without appearing in the sample drawer", async () => {
+  const sample = getSampleTemplate("wide-result-display-test");
+  assert.ok(sample?.hidden);
+  const text = await readFile("public/samples/wide-result-test-utf8.csv", "utf8");
+  const lines = text.trim().split(/\r?\n/);
+  assert.equal(lines.length - 1, 135);
+  assert.equal(lines[0].split(",").length, 30);
 });
 
 test("downloadable sample CSV files use their declared encodings", async () => {

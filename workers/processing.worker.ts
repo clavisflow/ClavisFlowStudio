@@ -4,9 +4,10 @@ import * as duckdb from "@duckdb/duckdb-wasm";
 import { Buffer } from "buffer";
 import chardet from "chardet";
 import iconv from "iconv-lite";
-import type { CsvEncoding, EffectiveEncoding, FileAnalysis, InputColumn, PublicFlow, QueryResult } from "@/lib/flow-types";
+import type { CsvEncoding, EffectiveEncoding, FileAnalysis, InputColumn, PublicFlow, QueryResult, ResultColumnKind } from "@/lib/flow-types";
 import { inspectSqlStructure } from "@/lib/sql-safety";
-import { serializeSafeCsv } from "@/lib/csv-security";
+import { normalizeResultValue, resultColumnKind } from "@/lib/result-format";
+import { buildQueryResult } from "@/lib/query-result";
 
 type AnalyzeMessage = { id: string; type: "analyze"; bytes: ArrayBuffer; encoding: CsvEncoding; delimiter: string; headerRow: number };
 type RunMessage = {
@@ -186,16 +187,9 @@ async function executeFlow(message: RunMessage): Promise<QueryResult> {
     const table = await connection.query(message.flow.sql);
     if (table.numRows > MAX_OUTPUT_ROWS) throw new Error(`結果が${MAX_OUTPUT_ROWS.toLocaleString()}行を超えました。条件を絞ってください。`);
     const columns = table.schema.fields.map((field) => field.name);
-    const records = table.toArray().map((row) => normalizeRow(row, columns));
-    const csvText = serializeSafeCsv(columns, records);
-    const withBom = message.flow.output.encoding === "utf-8-bom" ? `\uFEFF${csvText}` : csvText;
-    return {
-      columns,
-      rows: records.slice(0, 100),
-      totalRows: table.numRows,
-      csv: new TextEncoder().encode(withBom),
-      elapsedMs: Math.round(performance.now() - started),
-    };
+    const columnKinds = Object.fromEntries(table.schema.fields.map((field) => [field.name, resultColumnKind(field.type.toString())]));
+    const records = table.toArray().map((row) => normalizeRow(row, columns, columnKinds));
+    return buildQueryResult(columns, columnKinds, records, table.numRows, message.flow.output.encoding, Math.round(performance.now() - started));
   } finally {
     try { await connection?.close(); } catch { /* best-effort cleanup */ }
     try { await db?.terminate(); } catch { /* best-effort cleanup */ }
@@ -203,15 +197,8 @@ async function executeFlow(message: RunMessage): Promise<QueryResult> {
   }
 }
 
-function normalizeRow(row: Record<string, unknown>, columns: string[]): Record<string, string | number | boolean | null> {
-  return Object.fromEntries(columns.map((column) => {
-    const value = row[column];
-    if (value == null) return [column, null];
-    if (typeof value === "bigint") return [column, value.toString()];
-    if (typeof value === "number" || typeof value === "string" || typeof value === "boolean") return [column, value];
-    if (value instanceof Date) return [column, value.toISOString()];
-    return [column, String(value)];
-  }));
+function normalizeRow(row: Record<string, unknown>, columns: string[], columnKinds: Record<string, ResultColumnKind>): Record<string, string | number | boolean | null> {
+  return Object.fromEntries(columns.map((column) => [column, normalizeResultValue(row[column], columnKinds[column] ?? "text")]));
 }
 
 export {};

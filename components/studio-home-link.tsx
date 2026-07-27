@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Workflow } from "lucide-react";
+import { ProductIcon } from "@/components/product-icon";
 
 export function StudioHomeLink() {
   return (
@@ -14,7 +14,7 @@ export function StudioHomeLink() {
         window.location.assign("/");
       }}
     >
-      <span className="brand-mark"><Workflow size={18} aria-hidden="true" /></span>
+      <ProductIcon />
       <span>ClavisFlow Studio</span>
     </Link>
   );

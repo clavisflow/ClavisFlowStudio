@@ -1,6 +1,8 @@
 export const ENCODINGS = ["auto", "utf-8", "utf-8-bom", "shift_jis", "cp932"] as const;
 export type CsvEncoding = (typeof ENCODINGS)[number];
 export type EffectiveEncoding = Exclude<CsvEncoding, "auto">;
+export const OUTPUT_ENCODINGS = ["utf-8", "utf-8-bom", "shift_jis", "cp932"] as const;
+export type OutputEncoding = (typeof OUTPUT_ENCODINGS)[number];
 
 export interface InputColumn {
   name: string;
@@ -20,7 +22,7 @@ export interface FlowInput {
 
 export interface FlowOutput {
   fileName: string;
-  encoding: "utf-8-bom" | "utf-8";
+  encoding: OutputEncoding;
   enabled?: boolean;
 }
 
@@ -69,8 +71,11 @@ export interface FileAnalysis {
 
 export interface QueryResult {
   columns: string[];
+  columnKinds: Record<string, ResultColumnKind>;
   rows: Array<Record<string, string | number | boolean | null>>;
   totalRows: number;
   csv: Uint8Array;
   elapsedMs: number;
 }
+
+export type ResultColumnKind = "text" | "number" | "date" | "datetime" | "boolean";

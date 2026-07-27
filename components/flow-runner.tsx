@@ -6,6 +6,7 @@ import { getBundledSampleFiles } from "@/lib/demo-flow";
 import type { CsvEncoding, FileAnalysis, PublicFlow, QueryResult } from "@/lib/flow-types";
 import { loadPublicFlow } from "@/lib/flow-store";
 import { ProcessingClient } from "@/lib/processing-client";
+import { ResultTable } from "@/components/result-table";
 
 type FileState = {
   name?: string;
@@ -168,7 +169,7 @@ export function FlowRunner() {
     setPhase("実行準備中");
     try {
       const completed = await client.current.run(flow, selected);
-      const blob = new Blob([completed.csv.buffer as ArrayBuffer], { type: "text/csv;charset=utf-8" });
+      const blob = new Blob([completed.csv.buffer as ArrayBuffer], { type: "text/csv" });
       setDownloadUrl(URL.createObjectURL(blob));
       const { csv: _csv, ...preview } = completed;
       void _csv;
@@ -304,13 +305,7 @@ export function FlowRunner() {
             <div><h2>処理結果</h2><p>{result.totalRows.toLocaleString()}件を処理しました（{result.elapsedMs.toLocaleString()}ms）</p></div>
             {downloadUrl && <a className="button primary" href={downloadUrl} download={flow.output.fileName}>結果CSVをダウンロード</a>}
           </div>
-          <div className="table-wrap">
-            <table>
-              <thead><tr>{result.columns.map((column) => <th key={column}>{column}</th>)}</tr></thead>
-              <tbody>{result.rows.map((row, index) => <tr key={index}>{result.columns.map((column) => <td key={column}>{row[column] == null ? "—" : String(row[column])}</td>)}</tr>)}</tbody>
-            </table>
-          </div>
-          {result.totalRows > 100 && <p className="table-note">画面は先頭100件のみ表示しています。ダウンロードファイルには全件が含まれます。</p>}
+          <ResultTable result={result} overflowNote="画面は先頭100件のみ表示しています。ダウンロードファイルには全件が含まれます。" />
           <div className="step-actions start"><button className="button plain" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}>別のCSVを選択</button></div>
           </div>
         )}

@@ -1,4 +1,4 @@
-import { HttpError } from "./http.ts";
+import { HttpError } from "./errors.ts";
 
 const blocked = new Set(["ALTER","ATTACH","CALL","COPY","CREATE","DELETE","DETACH","DROP","EXPORT","IMPORT","INSERT","INSTALL","LOAD","MERGE","PRAGMA","REPLACE","SET","TRUNCATE","UPDATE","VACUUM"]);
 const readers = new Set(["GLOB","HTTPFS","PARQUET_SCAN","POSTGRES_SCAN","READ_BLOB","READ_CSV","READ_CSV_AUTO","READ_JSON","READ_JSON_AUTO","READ_NDJSON","READ_PARQUET","SQLITE_SCAN"]);

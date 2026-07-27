@@ -2,21 +2,25 @@
 
 **毎月のデータ処理を、URLにする。**
 
-ClavisFlow Studioは、公開されたFlow定義を使って実行者のCSVをブラウザ内で処理するNext.jsアプリです。CSV本体をAzure、Supabase、AI APIへアップロードしません。このリポジトリにはStep 1（Supabase基盤）とStep 2（最小の縦切り実装）が含まれます。
+ClavisFlow Studioは、CSVから繰り返し使えるデータ処理を作成し、ログイン不要の実行URLとして公開できるNext.jsアプリです。CSV本体はAzure、Supabase、AI APIへ送信せず、ブラウザ内だけで処理します。
 
 ## 実装済みの範囲
 
 - Next.js App Routerの静的出力（`out/`）
 - Supabase PostgreSQLの`flows` / `flow_versions`スキーマ、RLS、不変バージョントリガー
-- Flow作成、更新、公開、取得、公開停止、AI SQL生成のEdge Functions
+- フロー作成、更新、公開、取得、公開停止、削除、AI SQL生成のEdge Functions
 - 編集トークンのSHA-256ハッシュ保存（平文は作成レスポンスで一度だけ返却）
 - 公開URL `/run/?flow=<public-id>` とログイン不要の実行画面
 - UTF-8、UTF-8 BOM、Shift-JIS、Windows-31J / CP932の明示選択と自動判定
-- CSV列検証、DuckDB-Wasm実行、100行プレビュー、件数表示、CSVダウンロード
+- 日本語の処理指示からOpenAI Responses APIでDuckDB SQLを生成・再生成
+- CSV列検証、DuckDB-Wasm実行、100行プレビュー、件数表示、全件CSVダウンロード
+- 出力CSVのUTF-8、UTF-8 BOM、Shift-JIS、Windows-31J / CP932対応
 - 60秒タイムアウト、キャンセル、WorkerとDuckDBの破棄
 - 読取専用・単一SQLの字句／構造検査、外部readerと拡張機能の拒否
 - CSV Formula Injection対策
-- 「請求・入金チェック」デモFlow
+- 文字コードと処理内容が異なる5種類のサンプルフロー
+- 作成済みフローのブラウザ内一覧、公開・編集ページへの導線、削除
+- プライバシーポリシー、利用規約、製品アイコン、favicon
 
 ## アーキテクチャ
 
@@ -50,8 +54,6 @@ npm run dev
 ### VS CodeでF5デバッグ
 
 リポジトリのルートフォルダーをVS Codeで開き、`npm install`を一度実行した後に`F5`を押してください。既定の`Next.js: debug full stack (F5)`構成が開発サーバーをデバッガー付きで起動し、準備完了後にMicrosoft Edgeを自動で開きます。停止すると開発サーバーも終了します。
-
-サーバー側だけ、または既に起動済みのサーバーへブラウザだけを接続したい場合は、VS Codeの「実行とデバッグ」から対応する構成を選択できます。
 
 Supabaseを接続しない場合も、`http://localhost:3000/run/?flow=invoice-payment-check`は同梱デモ定義へフォールバックします。請求CSVには`請求番号,請求金額`、入金CSVには`請求番号,入金額`が必要です。
 
@@ -93,8 +95,11 @@ AI生成を有効にする場合だけ、同じファイルへOpenAI互換APIの
 ```dotenv
 OPENAI_COMPATIBLE_BASE_URL=https://api.openai.com/v1
 OPENAI_COMPATIBLE_API_KEY=replace-me
-OPENAI_COMPATIBLE_MODEL=gpt-5-mini
+OPENAI_COMPATIBLE_MODEL=gpt-5.6-terra
+OPENAI_REASONING_EFFORT=low
 ```
+
+AI生成はOpenAI Responses APIの構造化出力を使用します。OpenAIへ送るのは処理指示、入力テーブル名、列名、推定データ型だけです。CSVのファイル本体や行データは送信しません。`OPENAI_REASONING_EFFORT`は必要に応じて変更できますが、MVPの既定値はコストと待ち時間を抑える`low`です。
 
 ```bash
 npx supabase secrets set --env-file supabase/.env
@@ -169,6 +174,10 @@ Service RoleキーとAI APIキーには`NEXT_PUBLIC_`を付けないでくださ
 - 作成とAI生成は匿名エンドポイントのため、ブラウザID・IP・サービス全体の回数制限を適用しています。bot判定が必要になった段階でTurnstileを追加してください。
 - 最大入力は1ファイル250MB、最大出力は100万行です。ブラウザごとのWasmメモリ制限が先に到達する場合があります。
 
-## 次の実装
+## MVP後の改善候補
 
-AIによるSQL生成・修正対話、編集シークレットURLの復元導線、E2E、PWAを追加します。手入力SQLによるCSV解析・テスト・保存・公開は実装済みです。
+- Playwrightなどによる主要操作のE2Eテスト
+- PWA対応
+- 必要に応じたTurnstileなどのbot対策
+- AIによる複数ターンの対話修正
+- 利用量・エラー監視と運用アラート

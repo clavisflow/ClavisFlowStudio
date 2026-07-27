@@ -1,0 +1,149 @@
+import { HttpError } from "./errors.ts";
+import { assertSafeSql } from "./validation.ts";
+
+const inputColumnTypes = new Set(["VARCHAR", "BIGINT", "DOUBLE", "DATE", "BOOLEAN"]);
+
+export type AiInputSchema = {
+  tableName: string;
+  columns: Array<{ name: string; type: string }>;
+};
+
+export type GeneratedSql = {
+  sql: string;
+  summary: string;
+  warnings: string[];
+};
+
+export const generatedSqlJsonSchema = {
+  type: "object",
+  properties: {
+    sql: { type: "string" },
+    summary: { type: "string" },
+    warnings: { type: "array", items: { type: "string" } },
+  },
+  required: ["sql", "summary", "warnings"],
+  additionalProperties: false,
+} as const;
+
+const systemPrompt = `You generate DuckDB SQL for ClavisFlow Studio.
+Return one read-only query that implements the user's Japanese instruction.
+
+Rules:
+- Use only the supplied table names and column names.
+- Return exactly one SELECT statement. A WITH clause followed by SELECT is allowed.
+- Quote every supplied table name, column name, and output alias with double quotes.
+- Never use DDL, DML, COPY, PRAGMA, ATTACH, INSTALL, LOAD, external URLs, file readers, table functions, extensions, or multiple statements.
+- Prefer TRY_CAST when a value may not be safely convertible.
+- Give output columns clear Japanese aliases when appropriate.
+- Do not invent a column. If the instruction cannot be satisfied with the supplied schema, return the safest useful query and explain the limitation in warnings.
+- summary must be a concise Japanese explanation of the query.
+- warnings must be Japanese messages and may be an empty array.
+
+The CSV rows themselves are not provided. Infer nothing about their values.`;
+
+export function parseAiInputSchemas(value: unknown): AiInputSchema[] {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 2) {
+    throw new HttpError(400, "入力スキーマは1～2件必要です。");
+  }
+
+  return value.map((candidate, inputIndex) => {
+    if (!candidate || typeof candidate !== "object") throw new HttpError(400, `入力${inputIndex + 1}の定義が不正です。`);
+    const record = candidate as Record<string, unknown>;
+    const tableName = typeof record.tableName === "string" ? record.tableName.trim() : "";
+    if (!/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(tableName)) {
+      throw new HttpError(400, `入力${inputIndex + 1}のテーブル名が不正です。`);
+    }
+    if (!Array.isArray(record.columns) || record.columns.length < 1 || record.columns.length > 300) {
+      throw new HttpError(400, `入力${inputIndex + 1}の列定義は1～300件必要です。`);
+    }
+
+    const seen = new Set<string>();
+    const columns = record.columns.map((candidateColumn, columnIndex) => {
+      if (!candidateColumn || typeof candidateColumn !== "object") {
+        throw new HttpError(400, `入力${inputIndex + 1}の列${columnIndex + 1}が不正です。`);
+      }
+      const column = candidateColumn as Record<string, unknown>;
+      const name = typeof column.name === "string" ? column.name.trim() : "";
+      const type = typeof column.type === "string" ? column.type.toUpperCase() : "";
+      if (!name || name.length > 256 || /[\u0000-\u001f\u007f]/.test(name)) {
+        throw new HttpError(400, `入力${inputIndex + 1}の列名が不正です。`);
+      }
+      if (seen.has(name)) throw new HttpError(400, `入力${inputIndex + 1}に同名の列があります: ${name}`);
+      if (!inputColumnTypes.has(type)) throw new HttpError(400, `${name}のデータ型が不正です。`);
+      seen.add(name);
+      return { name, type };
+    });
+    return { tableName, columns };
+  });
+}
+
+export function buildResponsesRequest(model: string, instruction: string, inputs: AiInputSchema[], reasoningEffort = "low") {
+  const allowedEfforts = new Set(["none", "low", "medium", "high", "xhigh", "max"]);
+  const effort = allowedEfforts.has(reasoningEffort) ? reasoningEffort : "low";
+  return {
+    model,
+    store: false,
+    max_output_tokens: 3000,
+    reasoning: { effort },
+    input: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: JSON.stringify({ instruction, inputs }) },
+    ],
+    text: {
+      format: {
+        type: "json_schema",
+        name: "clavisflow_duckdb_sql",
+        strict: true,
+        schema: generatedSqlJsonSchema,
+      },
+    },
+  };
+}
+
+export function parseResponsesResult(value: unknown): GeneratedSql {
+  if (!value || typeof value !== "object") throw new HttpError(502, "AI APIから不正な応答が返されました。");
+  const response = value as Record<string, unknown>;
+  if (response.status === "incomplete") {
+    const details = response.incomplete_details as Record<string, unknown> | undefined;
+    const suffix = details?.reason === "max_output_tokens" ? " 出力が長すぎます。処理指示を簡潔にしてください。" : "";
+    throw new HttpError(502, `AIによるSQL生成が完了しませんでした。${suffix}`.trim());
+  }
+
+  let outputText = typeof response.output_text === "string" ? response.output_text : undefined;
+  if (Array.isArray(response.output)) {
+    for (const item of response.output) {
+      if (!item || typeof item !== "object" || (item as Record<string, unknown>).type !== "message") continue;
+      const content = (item as Record<string, unknown>).content;
+      if (!Array.isArray(content)) continue;
+      for (const part of content) {
+        if (!part || typeof part !== "object") continue;
+        const record = part as Record<string, unknown>;
+        if (record.type === "refusal") {
+          throw new HttpError(422, typeof record.refusal === "string" && record.refusal.trim()
+            ? `AIがSQL生成を拒否しました: ${record.refusal.trim()}`
+            : "AIがSQL生成を拒否しました。処理指示を見直してください。");
+        }
+        if (!outputText && record.type === "output_text" && typeof record.text === "string") outputText = record.text;
+      }
+    }
+  }
+  if (!outputText) throw new HttpError(502, "AI APIの応答にSQLがありません。");
+
+  let parsed: unknown;
+  try { parsed = JSON.parse(outputText); }
+  catch { throw new HttpError(502, "AI APIの構造化応答を解析できませんでした。"); }
+  if (!parsed || typeof parsed !== "object") throw new HttpError(502, "AI APIの構造化応答が不正です。");
+  const generated = parsed as Record<string, unknown>;
+  const sql = typeof generated.sql === "string" ? generated.sql.trim() : "";
+  const summary = typeof generated.summary === "string" ? generated.summary.trim() : "";
+  if (!summary || summary.length > 500) throw new HttpError(502, "AI APIの要約が不正です。");
+  if (!Array.isArray(generated.warnings) || generated.warnings.length > 10 || generated.warnings.some((warning) => typeof warning !== "string" || !warning.trim() || warning.length > 500)) {
+    throw new HttpError(502, "AI APIの警告情報が不正です。");
+  }
+  try { assertSafeSql(sql); }
+  catch (error) {
+    const detail = error instanceof Error ? error.message : "安全性を確認できませんでした。";
+    throw new HttpError(422, `生成されたSQLを安全性検査で拒否しました: ${detail}`);
+  }
+  return { sql, summary, warnings: generated.warnings.map((warning) => String(warning).trim()) };
+}

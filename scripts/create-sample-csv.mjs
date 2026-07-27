@@ -7,6 +7,23 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const target = join(root, "public", "samples");
 await mkdir(target, { recursive: true });
 
+const wideHeaders = [
+  "処理日",
+  "レコードID",
+  ...Array.from({ length: 14 }, (_, index) => `数値${String(index + 1).padStart(2, "0")}`),
+  ...Array.from({ length: 14 }, (_, index) => `文字列${String(index + 1).padStart(2, "0")}`),
+];
+const wideResultLines = [
+  wideHeaders.join(","),
+  ...Array.from({ length: 135 }, (_, rowIndex) => {
+    const rowNumber = rowIndex + 1;
+    const day = String((rowIndex % 28) + 1).padStart(2, "0");
+    const numbers = Array.from({ length: 14 }, (_, columnIndex) => String(rowNumber * (columnIndex + 1) * 1000));
+    const texts = Array.from({ length: 14 }, (_, columnIndex) => `値${rowNumber}-${columnIndex + 1}`);
+    return [`2026-07-${day}`, `ROW-${String(rowNumber).padStart(3, "0")}`, ...numbers, ...texts].join(",");
+  }),
+];
+
 const samples = [
   {
     name: "invoices-cp932.csv",
@@ -75,6 +92,11 @@ const samples = [
       "C-003,,tanaka@example.jp,052-345-6789",
       "C-004,高橋工業,takahashi@example.jp,045-456-7890",
     ],
+  },
+  {
+    name: "wide-result-test-utf8.csv",
+    encoding: "utf8",
+    lines: wideResultLines,
   },
 ];
 

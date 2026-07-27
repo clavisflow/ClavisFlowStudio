@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Download, FlaskConical, Play, X } from "lucide-react";
-import { sampleTemplates } from "@/lib/sample-templates";
+import { visibleSampleTemplates } from "@/lib/sample-templates";
 
 export function SamplesPanel() {
   const [open, setOpen] = useState(false);
@@ -38,7 +38,7 @@ export function SamplesPanel() {
             </header>
             <p className="samples-overview">処理例を選ぶと、サンプルCSVを使って通常のフロー作成を始められます。</p>
             <div className="sample-list">
-              {sampleTemplates.map((sample) => (
+              {visibleSampleTemplates.map((sample) => (
                 <article className="sample-row" key={sample.id}>
                   <header><h3>{sample.title}</h3><span>{sample.inputSummary}</span></header>
                   <p>{sample.processingSummary}</p>

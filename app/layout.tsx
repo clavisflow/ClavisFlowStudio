@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { SiteFooter } from "@/components/site-footer";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -10,7 +11,8 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="ja">
       <body suppressHydrationWarning>
-        {children}
+        <div className="app-page">{children}</div>
+        <SiteFooter />
       </body>
     </html>
   );

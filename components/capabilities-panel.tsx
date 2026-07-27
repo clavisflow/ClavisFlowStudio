@@ -6,18 +6,23 @@ import { Info as CircleInfo, ShieldCheck, X } from "lucide-react";
 const stages = [
   {
     number: "01",
-    title: "ファイルを追加する",
-    descriptions: ["CSVをドラッグ＆ドロップすると、列名や文字コードをブラウザ内で読み取ります。"],
+    title: "CSVを読み込む",
+    descriptions: ["CSVの列名や文字コードをブラウザ内で読み取ります。"],
   },
   {
     number: "02",
     title: "処理を作成する",
-    descriptions: ["やりたいことを日本語で指定できます。", "作成されたSQLは確認・修正できます。"],
+    descriptions: ["やりたいことを日本語で指定するとAIがSQLを作成します。", "作成されたSQLは確認・修正できます。"],
   },
   {
     number: "03",
-    title: "結果を確認して公開する",
-    descriptions: ["実際のCSVで処理結果を確認し、結果をCSVとしてダウンロードできます。", "完成した処理はログイン不要のURLで共有できます。"],
+    title: "結果を確かめる",
+    descriptions: ["実際のCSVで処理結果を確認できます。", "結果のダウンロードも可能です。"],
+  },
+  {
+    number: "04",
+    title: "実行ページとして公開する",
+    descriptions: ["作成した処理をURLとして公開して、誰でも使える実行ページにできます。"],
   },
 ];
 
@@ -56,7 +61,7 @@ export function CapabilitiesPanel() {
               <h2 id="capabilities-title"><CircleInfo size={21} aria-hidden="true" />できること</h2>
               <button ref={closeRef} type="button" aria-label="閉じる" onClick={close}><X size={21} aria-hidden="true" /></button>
             </header>
-            <p className="capabilities-overview">CSVから、繰り返し使えるデータ処理ページを作成できます。</p>
+            <p className="capabilities-overview"><span>やりたいことを日本語で指定するだけ。</span><span>CSV業務アプリを作って、そのまま公開できます。</span></p>
             <div className="capability-stages">
               {stages.map((stage) => (
                 <section className="capability-stage" key={stage.number}>
@@ -67,7 +72,7 @@ export function CapabilitiesPanel() {
             </div>
             <div className="capabilities-safety">
               <ShieldCheck size={18} aria-hidden="true" />
-              <div><strong>CSVはブラウザ内で処理されます</strong><p>ファイル本体はサーバーへ送信されません。</p></div>
+              <strong>CSVファイルはサーバーへ送信されません</strong>
             </div>
           </aside>
         </div>

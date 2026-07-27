@@ -2,11 +2,12 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ArrowRight, ChevronDown, ChevronUp, Code2, Copy, Download, ExternalLink, FileSpreadsheet, Link2, RefreshCw, Sparkles, Trash2 } from "lucide-react";
-import { createManagedFlow, editUrl, loadEditableFlow, publicRunUrl, savedFlowFromPublicationError, updateManagedFlow } from "@/lib/flow-store";
+import { createManagedFlow, editUrl, generateFlowSql, loadEditableFlow, publicRunUrl, savedFlowFromPublicationError, updateManagedFlow } from "@/lib/flow-store";
 import type { CsvEncoding, FileAnalysis, FlowDraft, FlowInput, InputColumn, ManagedFlow, QueryResult } from "@/lib/flow-types";
 import { ProcessingClient } from "@/lib/processing-client";
 import { getSampleTemplate, sampleTemplates } from "@/lib/sample-templates";
 import { inspectSqlStructure } from "@/lib/sql-safety";
+import { ResultTable } from "@/components/result-table";
 
 type WizardStep = 1 | 2 | 3 | 4;
 type PreviewResult = Omit<QueryResult, "csv">;
@@ -41,7 +42,7 @@ function initialDraft(): FlowDraft {
     description: "",
     inputs: [],
     sql: "",
-    output: { fileName: "result.csv", encoding: "utf-8-bom", enabled: true },
+    output: { fileName: "result.csv", encoding: "utf-8", enabled: false },
     duckdbVersion: "1.32.0",
   };
 }
@@ -57,7 +58,8 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
   const [hasGeneratedSql, setHasGeneratedSql] = useState(false);
   const [generationConfirmation, setGenerationConfirmation] = useState<"initial" | "regenerate">();
   const [aiGenerating, setAiGenerating] = useState(false);
-  const [downloadEnabled, setDownloadEnabled] = useState(true);
+  const [aiWarnings, setAiWarnings] = useState<string[]>([]);
+  const [downloadEnabled, setDownloadEnabled] = useState(false);
   const [copiedLink, setCopiedLink] = useState<"public" | "edit">();
   const [existing, setExisting] = useState<ManagedFlow>();
   const [publishedSnapshot, setPublishedSnapshot] = useState("");
@@ -228,6 +230,7 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
         output: sample.output,
       }));
       setInstruction(sample.instruction);
+      setAiWarnings([]);
       setGeneratedInstruction(sample.instruction);
       setHasGeneratedSql(true);
     } catch (sampleError) {
@@ -330,7 +333,9 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
     try {
       let sql = draft.sql;
       if (needsGeneration) {
-        sql = !hasGeneratedSql && draft.sql.trim() ? draft.sql : localPreviewSql(draft.inputs);
+        const generated = await generateFlowSql(trimmedInstruction, draft.inputs);
+        sql = generated.sql;
+        setAiWarnings(generated.warnings);
         setDraft((current) => ({ ...current, sql }));
         setGeneratedInstruction(trimmedInstruction);
         setHasGeneratedSql(true);
@@ -368,7 +373,7 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
         encoding: input.encoding,
         delimiter: input.delimiter,
       })));
-      const blob = new Blob([result.csv.buffer as ArrayBuffer], { type: "text/csv;charset=utf-8" });
+      const blob = new Blob([result.csv.buffer as ArrayBuffer], { type: "text/csv" });
       setDownloadUrl(URL.createObjectURL(blob));
       const { csv: _csv, ...previewResult } = result;
       void _csv;
@@ -582,7 +587,7 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
         {activeStep === 2 && (
           <div className="wizard-panel" role="tabpanel">
             <div className="processing-form">
-              <label className="field instruction-field"><span>やりたいこと（処理）</span><textarea rows={6} maxLength={4000} placeholder="例：請求CSVと入金CSVを請求番号で照合して、未入金や金額の違いが分かるようにして。" value={instruction} onChange={(event) => { setInstruction(event.target.value); clearPreview(); }} /></label>
+              <label className="field instruction-field"><span>やりたいこと（処理）</span><textarea rows={6} maxLength={4000} placeholder="例：請求CSVと入金CSVを請求番号で照合して、未入金や金額の違いが分かるようにして。" value={instruction} onChange={(event) => { setInstruction(event.target.value); setAiWarnings([]); clearPreview(); }} /></label>
               <div className="schema-overview">
                 {draft.inputs.map((input) => (
                   <article key={input.id}>
@@ -618,11 +623,11 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
           <div className="wizard-panel" role="tabpanel">
             {previewing && <div className="processing-status"><span className="spinner" /><strong>{phase || "処理中"}</strong><button type="button" className="text-button danger" onClick={() => client.current?.cancel()}>キャンセル</button></div>}
             {error && <div className="error-message">{error}</div>}
+            {aiWarnings.length > 0 && <div className="warning-message"><strong>AIからの確認事項</strong><ul>{aiWarnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></div>}
             {preview && (
               <>
                 <div className="result-toolbar"><div><h3>プレビュー</h3><p>{preview.totalRows.toLocaleString()}件を処理しました（{preview.elapsedMs.toLocaleString()}ms）</p></div>{downloadUrl && <a className="button secondary" href={downloadUrl} download={draft.output.fileName || "result.csv"}><Download size={17} aria-hidden="true" />結果をダウンロード</a>}</div>
-                <div className="table-wrap"><table><thead><tr>{preview.columns.map((column) => <th key={column}>{column}</th>)}</tr></thead><tbody>{preview.rows.map((row, index) => <tr key={index}>{preview.columns.map((column) => { const value = row[column]; return <td className={isNumericValue(value) ? "numeric-cell" : undefined} key={column}>{formatPreviewValue(value)}</td>; })}</tr>)}</tbody></table></div>
-                {preview.totalRows > 100 && <p className="table-note">画面は先頭100件のみ表示しています。</p>}
+                <ResultTable result={preview} overflowNote="画面は先頭100件のみ表示しています。" />
               </>
             )}
             {draft.sql && (
@@ -645,7 +650,7 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
               <label className="field"><span>フロー名</span><input value={draft.name} maxLength={120} placeholder="例：請求・入金チェック" onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></label>
               <label className="field"><span>説明（任意）</span><textarea rows={3} maxLength={1000} placeholder="このフローでできることを入力" value={draft.description} onChange={(event) => setDraft({ ...draft, description: event.target.value })} /></label>
               <label className="publication-control"><input type="checkbox" checked={downloadEnabled} onChange={(event) => setDownloadEnabled(event.target.checked)} /><span><strong>出力ファイルを指定する</strong><small>ファイル名と文字コードを指定します。未指定でも結果はダウンロードできます。</small></span></label>
-              {downloadEnabled && <div className="field-grid two-columns output-settings"><label className="field"><span>出力ファイル名</span><input value={draft.output.fileName} onChange={(event) => setDraft({ ...draft, output: { ...draft.output, fileName: event.target.value } })} /></label><label className="field"><span>文字コード</span><select value={draft.output.encoding} onChange={(event) => setDraft({ ...draft, output: { ...draft.output, encoding: event.target.value as FlowDraft["output"]["encoding"] } })}><option value="utf-8-bom">UTF-8 BOM</option><option value="utf-8">UTF-8</option></select></label></div>}
+              {downloadEnabled && <div className="field-grid two-columns output-settings"><label className="field"><span>出力ファイル名</span><input value={draft.output.fileName} onChange={(event) => setDraft({ ...draft, output: { ...draft.output, fileName: event.target.value } })} /></label><label className="field"><span>文字コード</span><select value={draft.output.encoding} onChange={(event) => setDraft({ ...draft, output: { ...draft.output, encoding: event.target.value as FlowDraft["output"]["encoding"] } })}><option value="utf-8">UTF-8</option><option value="utf-8-bom">UTF-8 BOM</option><option value="shift_jis">Shift-JIS</option><option value="cp932">Windows-31J／CP932</option></select></label></div>}
             </div>
             {error && <div className="error-message">{error}</div>}
             {publishedResult && (
@@ -684,26 +689,10 @@ function WizardStepper({ activeStep, canSelect, onSelect }: { activeStep: Wizard
   );
 }
 
-function localPreviewSql(inputs: FlowInput[]) {
-  const tableName = inputs[0]?.tableName.replaceAll('"', '""') ?? "input_1";
-  return `SELECT * FROM "${tableName}"`;
-}
-
 function formatFileSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function isNumericValue(value: unknown): value is number | bigint {
-  return (typeof value === "number" && Number.isFinite(value)) || typeof value === "bigint";
-}
-
-function formatPreviewValue(value: unknown) {
-  if (value == null) return "—";
-  if (typeof value === "bigint") return value.toLocaleString("ja-JP");
-  if (typeof value === "number" && Number.isFinite(value)) return value.toLocaleString("ja-JP", { maximumFractionDigits: 20 });
-  return String(value);
 }
 
 function editorSnapshot(draft: FlowDraft, instruction: string, downloadEnabled: boolean) {
@@ -724,7 +713,7 @@ function prepareDraft(draft: FlowDraft, fileStates: Record<string, EditorFileSta
       ...draft.output,
       enabled: downloadEnabled,
       fileName: downloadEnabled ? draft.output.fileName.trim() || "result.csv" : "result.csv",
-      encoding: downloadEnabled ? draft.output.encoding : "utf-8-bom",
+      encoding: downloadEnabled ? draft.output.encoding : "utf-8",
     },
   };
 }

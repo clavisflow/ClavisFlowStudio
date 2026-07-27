@@ -19,6 +19,7 @@ export interface SampleTemplate {
   sql: string;
   output: FlowOutput;
   files: SampleCsvFile[];
+  hidden?: boolean;
 }
 
 const invoiceFile: SampleCsvFile = { label: "請求CSV", name: "サンプル請求.csv", url: "/samples/invoices-cp932.csv", encoding: "cp932", encodingLabel: "CP932" };
@@ -27,6 +28,7 @@ const salesFile: SampleCsvFile = { label: "売上CSV", name: "サンプル売上
 const productFile: SampleCsvFile = { label: "商品マスタ", name: "サンプル商品マスタ.csv", url: "/samples/product-master-utf8.csv", encoding: "utf-8", encodingLabel: "UTF-8" };
 const inventoryFile: SampleCsvFile = { label: "在庫CSV", name: "サンプル在庫.csv", url: "/samples/inventory-utf8-bom.csv", encoding: "utf-8-bom", encodingLabel: "UTF-8 BOM" };
 const customerFile: SampleCsvFile = { label: "顧客CSV", name: "サンプル顧客.csv", url: "/samples/customers-utf8-bom.csv", encoding: "utf-8-bom", encodingLabel: "UTF-8 BOM" };
+const wideResultTestFile: SampleCsvFile = { label: "表示確認CSV", name: "表示確認用135行30列.csv", url: "/samples/wide-result-test-utf8.csv", encoding: "utf-8", encodingLabel: "UTF-8" };
 
 export const sampleTemplates: SampleTemplate[] = [
   {
@@ -57,7 +59,7 @@ SELECT
 FROM invoice_totals i
 FULL OUTER JOIN payment_totals p USING (invoice_no)
 ORDER BY "判定", "請求番号"`,
-    output: { fileName: "請求入金チェック結果.csv", encoding: "utf-8-bom", enabled: true },
+    output: { fileName: "請求入金チェック結果.csv", encoding: "utf-8", enabled: false },
     files: [invoiceFile, paymentFile],
   },
   {
@@ -76,7 +78,7 @@ ORDER BY "判定", "請求番号"`,
 FROM input_1
 GROUP BY "商品コード", "商品名"
 ORDER BY "売上合計" DESC, "商品コード"`,
-    output: { fileName: "商品別売上集計.csv", encoding: "utf-8-bom", enabled: true },
+    output: { fileName: "商品別売上集計.csv", encoding: "utf-8", enabled: false },
     files: [salesFile],
   },
   {
@@ -97,7 +99,7 @@ ORDER BY "売上合計" DESC, "商品コード"`,
 FROM input_1 s
 LEFT JOIN input_2 m ON s."商品コード" = m."商品コード"
 ORDER BY s."売上日", s."商品コード"`,
-    output: { fileName: "商品マスタ付与結果.csv", encoding: "utf-8-bom", enabled: true },
+    output: { fileName: "商品マスタ付与結果.csv", encoding: "utf-8", enabled: false },
     files: [salesFile, productFile],
   },
   {
@@ -118,7 +120,7 @@ ORDER BY s."売上日", s."商品コード"`,
 FROM input_1
 WHERE TRY_CAST("現在庫" AS BIGINT) + TRY_CAST("入荷予定" AS BIGINT) < TRY_CAST("発注点" AS BIGINT)
 ORDER BY "不足数" DESC, "商品コード"`,
-    output: { fileName: "在庫不足一覧.csv", encoding: "utf-8-bom", enabled: true },
+    output: { fileName: "在庫不足一覧.csv", encoding: "utf-8", enabled: false },
     files: [inventoryFile],
   },
   {
@@ -150,10 +152,25 @@ WHERE id_count > 1
    OR NULLIF(TRIM(COALESCE("メールアドレス", '')), '') IS NULL
    OR NULLIF(TRIM(COALESCE("電話番号", '')), '') IS NULL
 ORDER BY "顧客ID"`,
-    output: { fileName: "顧客データ確認結果.csv", encoding: "utf-8-bom", enabled: true },
+    output: { fileName: "顧客データ確認結果.csv", encoding: "utf-8", enabled: false },
     files: [customerFile],
   },
+  {
+    id: "wide-result-display-test",
+    title: "多列・多行の表示確認",
+    inputSummary: "1 CSV",
+    processingSummary: "135行・30列の結果表を表示",
+    flowName: "結果表の表示確認",
+    description: "多列・多行の結果プレビューを確認するための開発用フローです。",
+    instruction: "全ての列と行を、そのままレコードID順に表示して。",
+    sql: `SELECT * FROM input_1 ORDER BY "レコードID"`,
+    output: { fileName: "表示確認結果.csv", encoding: "utf-8", enabled: false },
+    files: [wideResultTestFile],
+    hidden: true,
+  },
 ];
+
+export const visibleSampleTemplates = sampleTemplates.filter((sample) => !sample.hidden);
 
 export function getSampleTemplate(id: string) {
   return sampleTemplates.find((sample) => sample.id === id);

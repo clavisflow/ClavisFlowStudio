@@ -197,9 +197,11 @@ export async function loadPublicFlow(publicId: string): Promise<PublicFlow> {
   throw new Error("公開フローが見つかりません。");
 }
 
-export async function generateFlowSql(instruction: string, inputs: FlowDraft["inputs"]): Promise<string> {
+export type GeneratedFlowSql = { sql: string; summary: string; warnings: string[] };
+
+export async function generateFlowSql(instruction: string, inputs: FlowDraft["inputs"]): Promise<GeneratedFlowSql> {
   if (!supabaseUrl()) throw new Error("AI生成を利用するにはSupabase Edge Functionsの接続設定が必要です。");
-  const result = await edge<{ sql: string }>("generate-sql", {
+  const result = await edge<GeneratedFlowSql>("generate-sql", {
     method: "POST",
     body: JSON.stringify({
       instruction,
@@ -209,7 +211,10 @@ export async function generateFlowSql(instruction: string, inputs: FlowDraft["in
       })),
     }),
   });
-  return result.sql;
+  if (!result.sql?.trim() || typeof result.summary !== "string" || !Array.isArray(result.warnings)) {
+    throw new Error("AI生成結果の形式が不正です。");
+  }
+  return result;
 }
 
 function localPublicFlow(publicId: string): PublicFlow | undefined {
