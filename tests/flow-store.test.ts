@@ -105,3 +105,24 @@ test("an unpublished update remains editable when publishing its new version fai
     else Object.defineProperty(globals, "localStorage", { configurable: true, value: originalStorage });
   }
 });
+
+test("Supabaseが返したHTTPサンプルURLをHTTPSへ正規化する", async () => {
+  const { normalizePublicFlowSampleUrls } = await import("../lib/flow-store.ts");
+  const normalized = normalizePublicFlowSampleUrls({
+    publicId: "sample-flow",
+    name: "サンプル処理",
+    description: "",
+    version: 1,
+    inputs: [],
+    sql: "SELECT 1",
+    output: { fileName: "result.csv", encoding: "utf-8" },
+    duckdbVersion: "1.32.0",
+    samples: [{
+      inputId: "input-1",
+      fileName: "sample.csv",
+      byteSize: 128,
+      url: "http://example-project.supabase.co/functions/v1/get-flow-sample",
+    }],
+  });
+  assert.equal(normalized.samples?.[0].url, "https://example-project.supabase.co/functions/v1/get-flow-sample");
+});

@@ -45,3 +45,18 @@ test("一致度が低い列は未対応にする", () => {
   assert.equal(matches.商品コード.status, "unmapped");
   assert.equal(matches.商品コード.source, undefined);
 });
+
+test("部分一致とJaro-Winkler類似度で表記ゆれを要確認候補にする", () => {
+  const partial = inferColumnMatches(
+    [{ name: "商品コード", type: "VARCHAR", required: true }],
+    { ...analysis, headers: ["旧商品コード値"], columnTypes: ["VARCHAR"], sampleValues: { 旧商品コード値: ["A-001"] } },
+  );
+  assert.equal(partial.商品コード.source, "旧商品コード値");
+
+  const typo = inferColumnMatches(
+    [{ name: "店舗コード", type: "VARCHAR", required: true }],
+    { ...analysis, headers: ["店舗コド"], columnTypes: ["VARCHAR"], sampleValues: { 店舗コド: ["T01"] } },
+  );
+  assert.equal(typo.店舗コード.source, "店舗コド");
+  assert.notEqual(typo.店舗コード.status, "unmapped");
+});

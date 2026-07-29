@@ -232,7 +232,8 @@ async function executeFlow(message: RunMessage): Promise<QueryResult> {
       if (decoded.replacementCount || decoded.warning) throw new Error(`${input.label}: ${decoded.warning}`);
       const headerRow = file.headerRow ?? input.headerRow ?? 1;
       const headers = analyzeCsv(decoded.text, file.delimiter, headerRow).headers;
-      const missing = input.requiredColumns.filter((column) => {
+      const requiredColumns = input.requiredColumns.filter((column) => column.required);
+      const missing = requiredColumns.filter((column) => {
         const mappedHeader = file.columnMapping[column.name];
         return !mappedHeader || !headers.includes(mappedHeader);
       });
@@ -246,9 +247,9 @@ async function executeFlow(message: RunMessage): Promise<QueryResult> {
       const quotedRawTable = quoteIdentifier(rawTableName);
       await connection.query(`CREATE OR REPLACE TEMP VIEW ${quotedRawTable} AS SELECT * FROM read_csv_auto('${fileName}', header = true, skip = ${skip}, delim = '${delimiter}', sample_size = -1, normalize_names = false)`);
       const existing = new Set(headers);
-      const remappedTargets = new Set(input.requiredColumns.filter((column) => file.columnMapping[column.name] !== column.name).map((column) => column.name));
+      const remappedTargets = new Set(requiredColumns.filter((column) => file.columnMapping[column.name] !== column.name).map((column) => column.name));
       const originalColumns = headers.filter((header) => !remappedTargets.has(header)).map(quoteIdentifier);
-      const aliases = input.requiredColumns
+      const aliases = requiredColumns
         .filter((column) => file.columnMapping[column.name] !== column.name || !existing.has(column.name))
         .map((column) => `${quoteIdentifier(file.columnMapping[column.name])} AS ${quoteIdentifier(column.name)}`);
       const projection = [...originalColumns, ...aliases].join(", ");

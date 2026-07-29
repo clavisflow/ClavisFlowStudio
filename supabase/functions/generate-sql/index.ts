@@ -28,6 +28,6 @@ Deno.serve(async (request) => {
       throw new HttpError(502, "AI APIの呼び出しに失敗しました。");
     }
     const result = await response.json();
-    return json(request, parseResponsesResult(result));
+    return json(request, parseResponsesResult(result, inputs));
   } catch (error) { return handleError(request, error); }
 });

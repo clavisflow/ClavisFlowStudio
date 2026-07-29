@@ -2,25 +2,20 @@
 
 import {
   AlertTriangle,
-  Check,
   CheckCircle2,
   CircleDashed,
-  CloudUpload,
   Columns3,
   CopyPlus,
   Database,
   FileJson,
   FileSpreadsheet,
   FileText,
-  Info,
-  Link2,
-  LoaderCircle,
   Play,
   RefreshCw,
   Sheet,
-  UploadCloud,
 } from "lucide-react";
-import { useEffect, useRef, useState, type DragEvent } from "react";
+import { useEffect, useRef, useState } from "react";
+import { DataSourceCard, DataSourcePicker, GoogleSheetModal } from "@/components/data-source-ui";
 import { inferColumnMatches, type ColumnMatch } from "@/lib/column-matching";
 import { getBundledSampleFiles } from "@/lib/demo-flow";
 import type { CsvEncoding, FileAnalysis, FlowInput, PublicFlow, QueryResult } from "@/lib/flow-types";
@@ -57,6 +52,9 @@ type InputState = {
   error?: string;
   options?: string[];
   selectedOption?: string;
+  range?: string;
+  headerRow: number;
+  delimiter: FlowInput["delimiter"];
 };
 type GoogleForm = {
   url: string;
@@ -87,12 +85,14 @@ export function FlowRunner() {
   const [flow, setFlow] = useState<PublicFlow>();
   const [inputStates, setInputStates] = useState<Record<string, InputState>>({});
   const [googleForms, setGoogleForms] = useState<Record<string, GoogleForm>>({});
-  const [sourceTab, setSourceTab] = useState<DataSourceKind>("file");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>();
   const [running, setRunning] = useState(false);
   const [phase, setPhase] = useState("");
-  const [dragTargetId, setDragTargetId] = useState<string>();
+  const [dropActive, setDropActive] = useState(false);
+  const [googleModalOpen, setGoogleModalOpen] = useState(false);
+  const [googleModalUrl, setGoogleModalUrl] = useState("");
+  const [googleModalLoading, setGoogleModalLoading] = useState(false);
   const [result, setResult] = useState<PreviewResult>();
   const [executionStatus, setExecutionStatus] = useState<"idle" | "success" | "failure">("idle");
   const [downloadUrl, setDownloadUrl] = useState<string>();
@@ -120,7 +120,7 @@ export function FlowRunner() {
         const loaded = await loadPublicFlow(publicId);
         if (!active) return;
         setFlow(loaded);
-        setInputStates(Object.fromEntries(loaded.inputs.map((input) => [input.id, emptyInputState()])));
+        setInputStates(Object.fromEntries(loaded.inputs.map((input) => [input.id, emptyInputState(input)])));
         setGoogleForms(Object.fromEntries(loaded.inputs.map((input) => [input.id, emptyGoogleForm()])));
       } catch (loadError) {
         setError(loadError instanceof Error ? loadError.message : "処理を取得できませんでした。");
@@ -148,7 +148,7 @@ export function FlowRunner() {
   async function analyzePrepared(
     input: FlowInput,
     file: File,
-    meta: Pick<InputState, "sourceKind" | "fileKind" | "name" | "size" | "options" | "selectedOption">,
+    meta: Pick<InputState, "sourceKind" | "fileKind" | "name" | "size" | "options" | "selectedOption"> & Partial<Pick<InputState, "range" | "headerRow" | "delimiter">>,
     encoding: CsvEncoding,
   ) {
     if (!client.current) return;
@@ -160,9 +160,11 @@ export function FlowRunner() {
       [input.id]: { ...current[input.id], ...meta, encoding, status: "analyzing", error: undefined, analysis: undefined, mappings: undefined },
     }));
     try {
-      const headerRow = meta.fileKind === "csv" ? input.headerRow ?? 1 : 1;
-      const analysis = await client.current.analyze(file, encoding, input.delimiter, headerRow);
-      const mappings = inferColumnMatches(input.requiredColumns, analysis);
+      const current = inputStates[input.id] ?? emptyInputState(input);
+      const headerRow = meta.fileKind === "json" ? 1 : meta.headerRow ?? current.headerRow;
+      const delimiter = meta.fileKind === "csv" ? meta.delimiter ?? current.delimiter : ",";
+      const analysis = await client.current.analyze(file, encoding, delimiter, headerRow);
+      const mappings = inferColumnMatches(requiredInputColumns(input), analysis);
       setInputStates((current) => ({
         ...current,
         [input.id]: {
@@ -202,7 +204,15 @@ export function FlowRunner() {
     try {
       if (extension === "csv") {
         delete sourceCollections.current[input.id];
-        await analyzePrepared(input, file, { sourceKind: "file", fileKind: "csv", name: file.name, size: file.size }, inputStates[input.id]?.encoding ?? "auto");
+        const state = inputStates[input.id] ?? emptyInputState(input);
+        await analyzePrepared(input, file, {
+          sourceKind: "file",
+          fileKind: "csv",
+          name: file.name,
+          size: file.size,
+          headerRow: state.headerRow,
+          delimiter: state.delimiter,
+        }, state.encoding);
         return;
       }
       if (extension === "xlsx") {
@@ -245,7 +255,9 @@ export function FlowRunner() {
     const collection = sourceCollections.current[input.id];
     const entry = collection?.entries.find((candidate) => candidate.name === option);
     if (!collection || !entry) return;
-    const csvFile = csvFileFromRows(entry.rows, `${originalName}-${entry.name}.csv`);
+    const state = inputStates[input.id] ?? emptyInputState(input);
+    const rows = kind === "excel" ? applyA1Range(entry.rows, state.range ?? "") : entry.rows;
+    const csvFile = await csvFileFromRows(rows, `${originalName}-${entry.name}.csv`, state.encoding);
     await analyzePrepared(input, csvFile, {
       sourceKind: "file",
       fileKind: kind,
@@ -253,11 +265,15 @@ export function FlowRunner() {
       size,
       options: collection.entries.map((candidate) => candidate.name),
       selectedOption: entry.name,
-    }, "utf-8");
+      range: state.range,
+      headerRow: state.headerRow,
+      delimiter: state.delimiter,
+    }, state.encoding === "auto" ? "utf-8" : state.encoding);
   }
 
-  async function loadGoogleSheet(input: FlowInput) {
-    const form = googleForms[input.id] ?? emptyGoogleForm();
+  async function loadGoogleSheet(input: FlowInput, urlOverride?: string) {
+    const initial = googleForms[input.id] ?? emptyGoogleForm();
+    const form = { ...initial, url: urlOverride ?? initial.url };
     setGoogleForms((current) => ({ ...current, [input.id]: { ...form, status: "loading", error: undefined } }));
     setError(undefined);
     try {
@@ -286,10 +302,12 @@ export function FlowRunner() {
         [input.id]: { ...form, sheet: selectedSheet, sheets: collection.entries.map((entry) => entry.name), status: "ready" },
       }));
       await prepareGoogleSheet(input, selectedSheet, form.range);
+      return true;
     } catch (googleError) {
       const message = googleError instanceof Error ? googleError.message : "スプレッドシートを読み込めませんでした。";
       setGoogleForms((current) => ({ ...current, [input.id]: { ...form, status: "error", error: message } }));
       setInputStates((current) => ({ ...current, [input.id]: { ...current[input.id], sourceKind: "google", fileKind: "google", status: "error", error: message } }));
+      return false;
     }
   }
 
@@ -299,7 +317,8 @@ export function FlowRunner() {
     if (!entry) return;
     try {
       const rangedRows = applyA1Range(entry.rows, range);
-      const csvFile = csvFileFromRows(rangedRows, `${sheetName}.csv`);
+      const state = inputStates[input.id] ?? emptyInputState(input);
+      const csvFile = await csvFileFromRows(rangedRows, `${sheetName}.csv`, state.encoding);
       await analyzePrepared(input, csvFile, {
         sourceKind: "google",
         fileKind: "google",
@@ -307,7 +326,10 @@ export function FlowRunner() {
         size: csvFile.size,
         options: collection.entries.map((candidate) => candidate.name),
         selectedOption: sheetName,
-      }, "utf-8");
+        range,
+        headerRow: state.headerRow,
+        delimiter: state.delimiter,
+      }, state.encoding === "auto" ? "utf-8" : state.encoding);
     } catch (rangeError) {
       const message = rangeError instanceof Error ? rangeError.message : "範囲を読み込めませんでした。";
       setInputStates((current) => ({ ...current, [input.id]: { ...current[input.id], sourceKind: "google", status: "error", error: message } }));
@@ -318,7 +340,47 @@ export function FlowRunner() {
     const file = preparedFiles.current[input.id];
     const state = inputStates[input.id];
     setInputStates((current) => ({ ...current, [input.id]: { ...current[input.id], encoding } }));
-    if (file && state?.fileKind === "csv") void analyzePrepared(input, file, state, encoding);
+    if (!state) return;
+    const next = { ...state, encoding };
+    if (state.fileKind === "csv" && file) {
+      void analyzePrepared(input, file, next, encoding);
+    } else if ((state.fileKind === "excel" || state.fileKind === "json") && state.selectedOption) {
+      const entry = sourceCollections.current[input.id]?.entries.find((candidate) => candidate.name === state.selectedOption);
+      if (entry) {
+        const rows = state.fileKind === "excel" ? applyA1Range(entry.rows, state.range ?? "") : entry.rows;
+        void csvFileFromRows(rows, `${state.name ?? "データ"}-${entry.name}.csv`, encoding)
+          .then((prepared) => analyzePrepared(input, prepared, next, encoding === "auto" ? "utf-8" : encoding));
+      }
+    } else if (state.fileKind === "google" && state.selectedOption) {
+      const entry = sourceCollections.current[input.id]?.entries.find((candidate) => candidate.name === state.selectedOption);
+      if (entry) {
+        void csvFileFromRows(applyA1Range(entry.rows, state.range ?? ""), `${entry.name}.csv`, encoding)
+          .then((prepared) => analyzePrepared(input, prepared, next, encoding === "auto" ? "utf-8" : encoding));
+      }
+    }
+  }
+
+  function changeSourceSetting(input: FlowInput, patch: Partial<Pick<InputState, "headerRow" | "delimiter" | "range">>) {
+    const state = inputStates[input.id];
+    if (!state) return;
+    const next = { ...state, ...patch };
+    setInputStates((current) => ({ ...current, [input.id]: next }));
+    const file = preparedFiles.current[input.id];
+    if (state.fileKind === "csv" && file) {
+      void analyzePrepared(input, file, next, next.encoding);
+    } else if (state.fileKind === "excel" && state.selectedOption) {
+      const entry = sourceCollections.current[input.id]?.entries.find((candidate) => candidate.name === state.selectedOption);
+      if (entry) {
+        void csvFileFromRows(applyA1Range(entry.rows, next.range ?? ""), `${state.name ?? "Excel"}-${entry.name}.csv`, next.encoding)
+          .then((prepared) => analyzePrepared(input, prepared, next, next.encoding === "auto" ? "utf-8" : next.encoding));
+      }
+    } else if (state.fileKind === "google" && state.selectedOption) {
+      setGoogleForms((current) => ({
+        ...current,
+        [input.id]: { ...(current[input.id] ?? emptyGoogleForm()), range: next.range ?? "" },
+      }));
+      void prepareGoogleSheet(input, state.selectedOption, next.range ?? "");
+    }
   }
 
   function changeMapping(inputId: string, requiredName: string, source: string) {
@@ -340,27 +402,78 @@ export function FlowRunner() {
     });
   }
 
-  function handleDragEnter(inputId: string, event: DragEvent<HTMLElement>) {
-    if (running || !Array.from(event.dataTransfer.types).includes("Files")) return;
-    event.preventDefault();
-    setDragTargetId(inputId);
+  function orderedFlowInputs() {
+    return flow?.inputs ?? [];
   }
 
-  function handleDragLeave(inputId: string, event: DragEvent<HTMLElement>) {
-    if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return;
-    setDragTargetId((current) => current === inputId ? undefined : current);
+  function isPopulated(inputId: string) {
+    const state = inputStates[inputId];
+    return Boolean(state?.sourceKind || state?.name || state?.status !== "empty");
   }
 
-  function handleDrop(input: FlowInput, event: DragEvent<HTMLElement>) {
-    event.preventDefault();
-    setDragTargetId(undefined);
-    if (running) return;
-    const droppedFiles = Array.from(event.dataTransfer.files);
-    if (droppedFiles.length !== 1) {
-      setError("データソースごとに1ファイルずつドロップしてください。");
+  async function addFiles(files: File[]) {
+    if (!flow || running || !files.length) return;
+    const targets = orderedFlowInputs().filter((input) => !isPopulated(input.id));
+    if (!targets.length) {
+      setError("この処理に追加できるデータソースはすべて設定済みです。");
       return;
     }
-    void chooseFile(input, droppedFiles[0]);
+    const accepted = files.filter((file) => ["csv", "xlsx", "json"].includes(file.name.split(".").pop()?.toLowerCase() ?? ""));
+    if (accepted.length !== files.length) {
+      setError("CSV、Excel（.xlsx）、JSON以外のファイルは追加できません。");
+    }
+    await Promise.all(accepted.slice(0, targets.length).map((file, index) => chooseFile(targets[index], file)));
+    if (accepted.length > targets.length) {
+      setError(`追加できるデータソースは残り${targets.length}件です。超過したファイルは追加していません。`);
+    }
+  }
+
+  function swapInputSources(inputId: string, direction: -1 | 1) {
+    if (!flow) return;
+    const populated = flow.inputs.filter((input) => isPopulated(input.id));
+    const index = populated.findIndex((input) => input.id === inputId);
+    const target = populated[index + direction];
+    const source = populated[index];
+    if (!source || !target) return;
+
+    swapRefEntries(preparedFiles.current, source.id, target.id);
+    swapRefEntries(sourceCollections.current, source.id, target.id);
+    setGoogleForms((current) => swapStateEntries(current, source.id, target.id));
+    setInputStates((current) => {
+      const sourceState = current[source.id];
+      const targetState = current[target.id];
+      return {
+        ...current,
+        [source.id]: rematchInputState(targetState, source),
+        [target.id]: rematchInputState(sourceState, target),
+      };
+    });
+    clearResult();
+  }
+
+  function removeInput(input: FlowInput) {
+    delete preparedFiles.current[input.id];
+    delete sourceCollections.current[input.id];
+    setInputStates((current) => ({ ...current, [input.id]: emptyInputState(input) }));
+    setGoogleForms((current) => ({ ...current, [input.id]: emptyGoogleForm() }));
+    clearResult();
+  }
+
+  async function addGoogleSheet() {
+    if (!flow || !googleModalUrl.trim()) return;
+    const input = orderedFlowInputs().find((candidate) => !isPopulated(candidate.id));
+    if (!input) {
+      setError("この処理に追加できるデータソースはすべて設定済みです。");
+      setGoogleModalOpen(false);
+      return;
+    }
+    setGoogleModalLoading(true);
+    const loaded = await loadGoogleSheet(input, googleModalUrl.trim());
+    setGoogleModalLoading(false);
+    if (loaded) {
+      setGoogleModalOpen(false);
+      setGoogleModalUrl("");
+    }
   }
 
   function selectedFiles(): SelectedFile[] {
@@ -368,16 +481,16 @@ export function FlowRunner() {
     return flow.inputs.map((input) => {
       const file = preparedFiles.current[input.id];
       const state = inputStates[input.id];
-      const columnMapping = Object.fromEntries(input.requiredColumns.map((column) => [column.name, state?.mappings?.[column.name]?.source ?? ""]));
-      if (!file || state?.status !== "ready" || state.sourceKind !== sourceTab || Object.values(columnMapping).some((value) => !value)) {
+      const columnMapping = Object.fromEntries(requiredInputColumns(input).map((column) => [column.name, state?.mappings?.[column.name]?.source ?? ""]));
+      if (!file || state?.status !== "ready" || Object.values(columnMapping).some((value) => !value)) {
         throw new Error(`${input.label}のデータと列の対応を確認してください。`);
       }
       return {
         tableName: input.tableName,
         file,
         encoding: state.encoding,
-        delimiter: input.delimiter,
-        headerRow: state.fileKind === "csv" ? input.headerRow ?? 1 : 1,
+        delimiter: state.fileKind === "csv" ? state.delimiter : ",",
+        headerRow: state.fileKind === "json" ? 1 : state.headerRow,
         columnMapping,
       };
     });
@@ -433,7 +546,6 @@ export function FlowRunner() {
         preparedFiles.current[input.id] = prepared.selected.file;
         return prepared.selected;
       }));
-      setSourceTab("file");
       setInputStates(sampleStates);
       await execute(selected);
     } catch (sampleError) {
@@ -459,7 +571,7 @@ export function FlowRunner() {
       if (!first) throw new Error(`${sourceFile.name}に読み込めるシートがありません。`);
       options = sheets.map((sheet) => sheet.sheet);
       selectedOption = first.sheet;
-      preparedFile = csvFileFromRows(first.data as TabularRows, `${first.sheet}.csv`);
+      preparedFile = await csvFileFromRows(first.data as TabularRows, `${first.sheet}.csv`, "utf-8");
       fileKind = "excel";
       encoding = "utf-8";
       headerRow = 1;
@@ -469,7 +581,7 @@ export function FlowRunner() {
       if (!first) throw new Error(`${sourceFile.name}に表として読み込めるデータがありません。`);
       options = targets.map((target) => target.path);
       selectedOption = first.path;
-      preparedFile = csvFileFromRows(first.rows, "sample.json.csv");
+      preparedFile = await csvFileFromRows(first.rows, "sample.json.csv", "utf-8");
       fileKind = "json";
       encoding = "utf-8";
       headerRow = 1;
@@ -478,8 +590,9 @@ export function FlowRunner() {
     }
 
     const analysis = await client.current.analyze(preparedFile, encoding, input.delimiter, headerRow);
-    const mappings = inferColumnMatches(input.requiredColumns, analysis);
-    if (input.requiredColumns.some((column) => !mappings[column.name]?.source)) {
+    const requiredColumns = requiredInputColumns(input);
+    const mappings = inferColumnMatches(requiredColumns, analysis);
+    if (requiredColumns.some((column) => !mappings[column.name]?.source)) {
       throw new Error(`${input.label}のサンプルで必要な列を対応できませんでした。`);
     }
     return {
@@ -494,6 +607,9 @@ export function FlowRunner() {
         mappings,
         options,
         selectedOption,
+        range: "",
+        headerRow,
+        delimiter: input.delimiter,
         error: analysis.warning,
       },
       selected: {
@@ -502,7 +618,7 @@ export function FlowRunner() {
         encoding,
         delimiter: input.delimiter,
         headerRow,
-        columnMapping: Object.fromEntries(input.requiredColumns.map((column) => [column.name, mappings[column.name].source!])),
+        columnMapping: Object.fromEntries(requiredColumns.map((column) => [column.name, mappings[column.name].source!])),
       },
     };
   }
@@ -552,9 +668,10 @@ export function FlowRunner() {
   const canRun = flow.inputs.every((input) => {
     const state = inputStates[input.id];
     return state?.status === "ready" &&
-      state.sourceKind === sourceTab &&
-      input.requiredColumns.every((column) => Boolean(state.mappings?.[column.name]?.source));
+      requiredInputColumns(input).every((column) => Boolean(state.mappings?.[column.name]?.source));
   });
+  const orderedInputs = orderedFlowInputs();
+  const populatedInputs = orderedInputs.filter((input) => isPopulated(input.id));
   const inputRowCount = flow.inputs.reduce((total, input) => total + (inputStates[input.id]?.analysis?.rowCount ?? 0), 0);
 
   return (
@@ -596,110 +713,95 @@ export function FlowRunner() {
           <div><span className="runner-step-number">1</span><div><h2 id="data-source-title">データを選択</h2><p>この処理に使用するデータソースを選択してください。</p></div></div>
         </div>
 
-        <div className="runner-source-tabs" role="tablist" aria-label="データソース">
-          <button role="tab" aria-selected={sourceTab === "file"} className={sourceTab === "file" ? "active" : ""} onClick={() => setSourceTab("file")}>
-            <FileText size={19} aria-hidden="true" />ファイル
-          </button>
-          <button role="tab" aria-selected={sourceTab === "google"} className={sourceTab === "google" ? "active" : ""} onClick={() => setSourceTab("google")}>
-            <Sheet size={19} aria-hidden="true" />Googleスプレッドシート
-          </button>
-        </div>
+        <DataSourcePicker
+          dragging={dropActive}
+          disabled={running}
+          onDraggingChange={setDropActive}
+          onFiles={(files) => void addFiles(files)}
+          onGoogle={() => setGoogleModalOpen(true)}
+        />
 
-        <div className="runner-input-list">
-          {flow.inputs.map((input) => {
-            const state = inputStates[input.id] ?? emptyInputState();
+        <div className="data-source-list">
+          {!populatedInputs.length && <DataSourceEmpty />}
+          {populatedInputs.map((input, cardIndex) => {
+            const state = inputStates[input.id] ?? emptyInputState(input);
             const google = googleForms[input.id] ?? emptyGoogleForm();
             return (
-              <article className="runner-input-card" key={input.id}>
-                <header>
-                  <div>
-                    <p className="runner-source-label">データソース</p>
-                    <h3>{input.label}</h3>
-                  </div>
-                  <div className="runner-required-summary">
-                    <span>必要な項目</span>
-                    <div>{input.requiredColumns.map((column) => <b key={column.name}>{column.name}</b>)}</div>
-                  </div>
-                </header>
-
-                {sourceTab === "file" ? (
-                  <div role="tabpanel" className="runner-source-panel">
-                    <div
-                      className={`runner-file-dropzone${dragTargetId === input.id ? " drag-active" : ""}`}
-                      onDragEnter={(event) => handleDragEnter(input.id, event)}
-                      onDragLeave={(event) => handleDragLeave(input.id, event)}
-                      onDragOver={(event) => { if (!running) { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; } }}
-                      onDrop={(event) => handleDrop(input, event)}
-                    >
-                      <UploadCloud size={30} aria-hidden="true" />
-                      <strong>{dragTargetId === input.id ? "ここにドロップしてください" : "ファイルをドラッグ＆ドロップ"}</strong>
-                      <span>または</span>
-                      <label className="button secondary runner-file-button">
-                        <input type="file" accept=".csv,.xlsx,.json,text/csv,application/json,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={(event) => { const file = event.target.files?.[0]; if (file) void chooseFile(input, file); }} />
-                        ファイルを選択
-                      </label>
-                      <small>対応形式：CSV、Excel（.xlsx）、JSON</small>
-                    </div>
-
-                    {state.fileKind === "csv" && state.sourceKind === "file" && (
-                      <label className="runner-field compact">
-                        <span>文字コード</span>
-                        <select value={state.encoding} onChange={(event) => changeEncoding(input, event.target.value as CsvEncoding)}>
-                          {Object.entries(encodingLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-                        </select>
-                      </label>
-                    )}
-                    {state.fileKind === "excel" && state.sourceKind === "file" && state.options && (
-                      <label className="runner-field">
-                        <span>Excelシート</span>
-                        <select value={state.selectedOption} onChange={(event) => void selectStructuredSource(input, event.target.value, state.name ?? "Excel", state.size ?? 0, "excel")}>
-                          {state.options.map((option) => <option key={option}>{option}</option>)}
-                        </select>
-                      </label>
-                    )}
-                    {state.fileKind === "json" && state.sourceKind === "file" && state.options && (
-                      <label className="runner-field">
-                        <span>JSONの読み込み対象</span>
-                        <select value={state.selectedOption} onChange={(event) => void selectStructuredSource(input, event.target.value, state.name ?? "JSON", state.size ?? 0, "json")}>
-                          {state.options.map((option) => <option key={option}>{option}</option>)}
-                        </select>
-                      </label>
-                    )}
-                  </div>
-                ) : (
-                  <div role="tabpanel" className="runner-source-panel runner-google-panel">
-                    <label className="runner-field full">
-                      <span>スプレッドシートURL</span>
-                      <div className="runner-input-with-icon"><Link2 size={18} aria-hidden="true" /><input type="url" placeholder="https://docs.google.com/spreadsheets/d/..." value={google.url} onChange={(event) => setGoogleForms((current) => ({ ...current, [input.id]: { ...google, url: event.target.value, status: "idle", error: undefined } }))} /></div>
-                    </label>
-                    <div className="runner-google-fields">
-                      <label className="runner-field">
-                        <span>シート選択</span>
-                        <select disabled={!google.sheets.length} value={google.sheet} onChange={(event) => {
-                          const sheet = event.target.value;
-                          setGoogleForms((current) => ({ ...current, [input.id]: { ...google, sheet } }));
-                          void prepareGoogleSheet(input, sheet, google.range);
-                        }}>
-                          {!google.sheets.length && <option>読み込み後に選択できます</option>}
-                          {google.sheets.map((sheetName) => <option key={sheetName}>{sheetName}</option>)}
-                        </select>
-                      </label>
-                      <label className="runner-field">
-                        <span>範囲</span>
-                        <input type="text" placeholder="例：A1:D100（省略可）" value={google.range} onChange={(event) => setGoogleForms((current) => ({ ...current, [input.id]: { ...google, range: event.target.value } }))} />
-                      </label>
-                    </div>
-                    <button className="button secondary runner-google-load" disabled={!google.url.trim() || google.status === "loading"} onClick={() => void loadGoogleSheet(input)}>
-                      {google.status === "loading" ? <LoaderCircle className="spin-icon" size={18} aria-hidden="true" /> : <CloudUpload size={18} aria-hidden="true" />}
-                      {google.status === "loading" ? "読み込んでいます..." : "データを読み込む"}
-                    </button>
-                    <p className="runner-google-note"><Info size={16} aria-hidden="true" />リンクを知っている全員が閲覧できるスプレッドシートに対応しています。</p>
-                    {google.error && <p className="runner-inline-error">{google.error}</p>}
+              <DataSourceCard
+                key={input.id}
+                index={cardIndex}
+                total={populatedInputs.length}
+                sourceName={input.label}
+                resourceName={state.name ?? "データを読み込んでいます"}
+                kindLabel={sourceKindLabel(state.fileKind)}
+                identifier={input.tableName}
+                rowCount={state.analysis?.rowCount}
+                columnCount={state.analysis?.headers.length}
+                busy={state.status === "analyzing"}
+                actionsDisabled={running}
+                error={state.error}
+                onMove={(direction) => swapInputSources(input.id, direction)}
+                onDelete={() => removeInput(input)}
+                afterSettings={(
+                  <div className="data-source-required">
+                    <span>必要な項目（すべて必須）</span>
+                    <div>{requiredInputColumns(input).length ? requiredInputColumns(input).map((column) => <b key={column.name}>{column.name}</b>) : <b>なし</b>}</div>
                   </div>
                 )}
-
-                <InputMetadata state={state} activeSource={sourceTab} />
-              </article>
+              >
+                  <label className="runner-field">
+                    <span>文字コード</span>
+                    <select value={state.encoding} disabled={running || state.status === "analyzing"} onChange={(event) => changeEncoding(input, event.target.value as CsvEncoding)}>
+                      {Object.entries(encodingLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                    </select>
+                  </label>
+                  {state.fileKind === "csv" && (
+                    <label className="runner-field">
+                      <span>区切り文字</span>
+                      <select value={state.delimiter} disabled={running || state.status === "analyzing"} onChange={(event) => changeSourceSetting(input, { delimiter: event.target.value as FlowInput["delimiter"] })}>
+                        <option value=",">カンマ</option><option value="\t">タブ</option><option value=";">セミコロン</option>
+                      </select>
+                    </label>
+                  )}
+                  {state.fileKind !== "json" && (
+                    <label className="runner-field">
+                      <span>ヘッダー行</span>
+                      <input type="number" min={1} value={state.headerRow} disabled={running || state.status === "analyzing"} onChange={(event) => changeSourceSetting(input, { headerRow: Math.max(1, Number(event.target.value) || 1) })} />
+                    </label>
+                  )}
+                  {(state.fileKind === "excel" || state.fileKind === "google") && (
+                    <label className="runner-field">
+                      <span>シート</span>
+                      <select
+                        value={state.selectedOption ?? ""}
+                        disabled={running || state.status === "analyzing" || !state.options?.length}
+                        onChange={(event) => {
+                          if (state.fileKind === "excel") void selectStructuredSource(input, event.target.value, state.name ?? "Excel", state.size ?? 0, "excel");
+                          else {
+                            setGoogleForms((current) => ({ ...current, [input.id]: { ...google, sheet: event.target.value } }));
+                            void prepareGoogleSheet(input, event.target.value, state.range ?? "");
+                          }
+                        }}
+                      >
+                        {state.options?.map((option) => <option key={option}>{option}</option>)}
+                      </select>
+                    </label>
+                  )}
+                  {(state.fileKind === "excel" || state.fileKind === "google") && (
+                    <label className="runner-field">
+                      <span>読み込み範囲</span>
+                      <input type="text" placeholder="例：A1:D100（省略可）" value={state.range ?? ""} disabled={running || state.status === "analyzing"} onChange={(event) => changeSourceSetting(input, { range: event.target.value })} />
+                    </label>
+                  )}
+                  {state.fileKind === "json" && state.options && (
+                    <label className="runner-field">
+                      <span>JSONの読み込み対象</span>
+                      <select value={state.selectedOption} disabled={running || state.status === "analyzing"} onChange={(event) => void selectStructuredSource(input, event.target.value, state.name ?? "JSON", state.size ?? 0, "json")}>
+                        {state.options.map((option) => <option key={option}>{option}</option>)}
+                      </select>
+                    </label>
+                  )}
+              </DataSourceCard>
             );
           })}
         </div>
@@ -707,25 +809,35 @@ export function FlowRunner() {
 
       <section className="runner-section" id="column-mapping" aria-labelledby="column-mapping-title">
         <div className="runner-section-heading">
-          <div><span className="runner-step-number">2</span><div><h2 id="column-mapping-title">列の対応を確認</h2><p>列名・別名・データ型・サンプル値から入力列を自動推測します。</p></div></div>
+          <div><span className="runner-step-number">2</span><div><h2 id="column-mapping-title">列の対応を確認</h2><p>必要な項目と入力列の対応を確認し、未対応の項目を選択してください。</p></div></div>
         </div>
 
         <div className="runner-mapping-list">
-          {flow.inputs.map((input) => {
+          {!populatedInputs.length && (
+            <div className="runner-mapping-empty">
+              <Columns3 aria-hidden="true" />
+              <div><h3>先にデータを選択してください</h3><p>STEP 1でデータを読み込むと、自動推測した列の対応を表示します。</p></div>
+            </div>
+          )}
+          {populatedInputs.map((input) => {
             const state = inputStates[input.id];
-            if (!state?.analysis || state.sourceKind !== sourceTab) {
-              return <div className="runner-mapping-empty" key={input.id}><Columns3 aria-hidden="true" /><div><h3>{input.label}</h3><p>データを読み込むと、必要な項目との対応候補を表示します。</p></div></div>;
+            if (!state?.analysis) {
+              return <div className="runner-mapping-empty" key={input.id}><Columns3 aria-hidden="true" /><div><h3>{input.label}</h3><p>データの解析完了後に列の対応を表示します。</p></div></div>;
             }
+            const analysis = state.analysis;
             return (
               <article className="runner-mapping-card" key={input.id}>
-                <header><h3>{input.label}</h3><span>{state.analysis.headers.length}列を検出</span></header>
+                <header>
+                  <div><h3>{input.label}</h3><p>{state.name}</p></div>
+                  <span>{analysis.headers.length}列を検出</span>
+                </header>
                 <div className="runner-mapping-table-wrap">
                   <table className="runner-mapping-table">
                     <thead><tr><th>処理側の項目名</th><th>データ型</th><th>推測された入力列</th><th>推測状態</th><th>サンプル値</th></tr></thead>
                     <tbody>
-                      {input.requiredColumns.map((column) => {
+                      {requiredInputColumns(input).map((column) => {
                         const match = state.mappings?.[column.name] ?? { score: 0, status: "unmapped" as const };
-                        const samples = match.source ? state.analysis?.sampleValues[match.source] ?? [] : [];
+                        const samples = match.source ? analysis.sampleValues[match.source] ?? [] : [];
                         return (
                           <tr key={column.name}>
                             <td><strong>{column.name}</strong><span className="runner-required-mark">必須</span></td>
@@ -733,7 +845,7 @@ export function FlowRunner() {
                             <td>
                               <select aria-label={`${column.name}に対応する入力列`} value={match.source ?? ""} onChange={(event) => changeMapping(input.id, column.name, event.target.value)}>
                                 <option value="">選択してください</option>
-                                {state.analysis?.headers.map((header) => <option key={header}>{header}</option>)}
+                                {analysis.headers.map((header) => <option key={header}>{header}</option>)}
                               </select>
                             </td>
                             <td><MatchStatus status={match.status} /></td>
@@ -748,7 +860,6 @@ export function FlowRunner() {
             );
           })}
         </div>
-
         {error && executionStatus !== "failure" && <div className="error-message">{error}</div>}
         {running && <div className="processing-status"><span className="spinner" /><strong>{phase || "処理中"}</strong><button className="text-button danger" onClick={() => client.current?.cancel()}>キャンセル</button></div>}
         <div className="runner-execute-actions">
@@ -787,22 +898,17 @@ export function FlowRunner() {
         )}
       </section>
 
+      <GoogleSheetModal
+        open={googleModalOpen}
+        url={googleModalUrl}
+        loading={googleModalLoading}
+        onUrlChange={setGoogleModalUrl}
+        onClose={() => setGoogleModalOpen(false)}
+        onSubmit={() => void addGoogleSheet()}
+      />
+
       {notice && <div className="portal-toast" role="status">{notice}</div>}
     </main>
-  );
-}
-
-function InputMetadata({ state, activeSource }: { state: InputState; activeSource: DataSourceKind }) {
-  if (state.sourceKind !== activeSource || (!state.name && state.status === "empty")) return null;
-  return (
-    <div className={`runner-input-metadata ${state.status}`}>
-      {state.status === "analyzing" ? <LoaderCircle className="spin-icon" aria-hidden="true" /> : state.status === "ready" ? <Check aria-hidden="true" /> : <AlertTriangle aria-hidden="true" />}
-      <div>
-        <strong>{state.status === "analyzing" ? "データを解析しています" : state.name}</strong>
-        {state.analysis && <p>行数 {state.analysis.rowCount.toLocaleString()}・列数 {state.analysis.headers.length.toLocaleString()}・{state.fileKind === "csv" ? `文字コード ${encodingLabels[state.analysis.detectedEncoding]}` : state.fileKind === "excel" ? `シート ${state.selectedOption}` : state.fileKind === "json" ? `読み込み対象 ${state.selectedOption}` : `シート ${state.selectedOption}`}</p>}
-        {state.error && <p>{state.error}</p>}
-      </div>
-    </div>
   );
 }
 
@@ -812,17 +918,76 @@ function MatchStatus({ status }: { status: ColumnMatch["status"] }) {
   return <span className="runner-match-status unmapped"><CircleDashed aria-hidden="true" />未対応</span>;
 }
 
-function emptyInputState(): InputState {
-  return { encoding: "auto", status: "empty" };
+function DataSourceEmpty() {
+  return (
+    <div className="data-source-empty">
+      <Columns3 aria-hidden="true" />
+      <div>
+        <h3>データソースはまだありません</h3>
+        <p>上の領域へファイルをドロップするか、Googleスプレッドシートを追加してください。</p>
+      </div>
+    </div>
+  );
+}
+
+function swapRefEntries<T>(record: Record<string, T>, firstId: string, secondId: string) {
+  const first = record[firstId];
+  const second = record[secondId];
+  if (second === undefined) delete record[firstId];
+  else record[firstId] = second;
+  if (first === undefined) delete record[secondId];
+  else record[secondId] = first;
+}
+
+function swapStateEntries<T>(record: Record<string, T>, firstId: string, secondId: string): Record<string, T> {
+  const next = { ...record };
+  swapRefEntries(next, firstId, secondId);
+  return next;
+}
+
+function requiredInputColumns(input: FlowInput) {
+  return input.requiredColumns.filter((column) => column.required);
+}
+
+function rematchInputState(state: InputState | undefined, input: FlowInput): InputState {
+  if (!state) return emptyInputState(input);
+  return {
+    ...state,
+    mappings: state.analysis ? inferColumnMatches(requiredInputColumns(input), state.analysis) : undefined,
+  };
+}
+
+function emptyInputState(input: FlowInput): InputState {
+  return {
+    encoding: input.encoding ?? "auto",
+    status: "empty",
+    headerRow: input.headerRow ?? 1,
+    delimiter: input.delimiter,
+    range: "",
+  };
 }
 
 function emptyGoogleForm(): GoogleForm {
   return { url: "", sheet: "", range: "", sheets: [], status: "idle" };
 }
 
-function csvFileFromRows(rows: TabularRows, name: string) {
+async function csvFileFromRows(rows: TabularRows, name: string, encoding: CsvEncoding) {
   if (!rows.length || !rows[0]?.length) throw new Error("ヘッダー行を読み取れませんでした。");
-  return new File([rowsToCsv(rows)], name, { type: "text/csv;charset=utf-8" });
+  const csv = rowsToCsv(rows);
+  if (encoding === "shift_jis" || encoding === "cp932") {
+    const iconv = await import("iconv-lite");
+    return new File([new Uint8Array(iconv.encode(csv, "cp932"))], name, { type: "text/csv" });
+  }
+  const body = encoding === "utf-8-bom" ? `\uFEFF${csv}` : csv;
+  return new File([body], name, { type: "text/csv;charset=utf-8" });
+}
+
+function sourceKindLabel(kind?: FileKind) {
+  if (kind === "excel") return "Excel";
+  if (kind === "json") return "JSON";
+  if (kind === "google") return "Googleスプレッドシート";
+  if (kind === "csv") return "CSV";
+  return "読み込み中";
 }
 
 function withExtension(fileName: string, extension: string) {

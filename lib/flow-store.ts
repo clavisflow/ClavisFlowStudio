@@ -1,5 +1,5 @@
 import { getBundledDemo } from "./demo-flow.ts";
-import type { FlowDraft, FlowStatus, ManagedFlow, PublicFlow, PublicFlowSummary } from "./flow-types.ts";
+import type { AiSampleRow, FlowDraft, FlowSample, FlowStatus, FlowVisibility, ManagedFlow, PublicFlow, PublicFlowSummary } from "./flow-types.ts";
 import { currentAccessToken, getSupabaseBrowserClient } from "./supabase-browser.ts";
 
 const STORAGE_KEY = "clavisflow-studio:managed-flows:v1";
@@ -82,21 +82,23 @@ export async function deleteManagedFlow(flow: ManagedFlow): Promise<void> {
 
 export async function createManagedFlow(draft: FlowDraft, publish: boolean): Promise<ManagedFlow> {
   const now = new Date().toISOString();
+  const visibility = normalizeFlowVisibility(draft.visibility);
+  const preparedDraft = { ...draft, visibility };
   let publicId = crypto.randomUUID().replaceAll("-", "").slice(0, 20);
   let editToken = crypto.randomUUID().replaceAll("-", "") + crypto.randomUUID().replaceAll("-", "");
 
   if (supabaseUrl()) {
     const created = await edge<{ publicId: string; editToken: string; version: number }>("create-flow", {
       method: "POST",
-      body: JSON.stringify(draft),
+      body: JSON.stringify(preparedDraft),
     });
     publicId = created.publicId;
     editToken = created.editToken;
-    const savedDraft: ManagedFlow = { ...draft, publicId, editToken, status: "draft", version: created.version, createdAt: now, updatedAt: now };
+    const savedDraft: ManagedFlow = { ...preparedDraft, publicId, editToken, status: "draft", version: created.version, createdAt: now, updatedAt: now };
     upsert(savedDraft);
     if (!publish) return savedDraft;
     try {
-      await setRemotePublication(publicId, editToken, created.version, true);
+      await setRemotePublication(publicId, editToken, created.version, true, visibility);
     } catch (error) {
       throw publicationFailure(error, savedDraft);
     }
@@ -105,25 +107,27 @@ export async function createManagedFlow(draft: FlowDraft, publish: boolean): Pro
     return published;
   }
 
-  const flow: ManagedFlow = { ...draft, publicId, editToken, status: publish ? "published" : "draft", version: 1, createdAt: now, updatedAt: now, updatedBy: publish ? await currentUserDisplayName() : undefined };
+  const flow: ManagedFlow = { ...preparedDraft, publicId, editToken, status: publish ? "published" : "draft", version: 1, createdAt: now, updatedAt: now, updatedBy: publish ? await currentUserDisplayName() : undefined };
   upsert(flow);
   return flow;
 }
 
 export async function updateManagedFlow(existing: ManagedFlow, draft: FlowDraft, publish: boolean): Promise<ManagedFlow> {
+  const visibility = normalizeFlowVisibility(draft.visibility ?? existing.visibility);
+  const preparedDraft = { ...draft, visibility };
   let version = existing.version + 1;
   if (supabaseUrl()) {
     const updated = await edge<{ version: number }>("update-flow", {
       method: "POST",
       headers: { "x-edit-token": existing.editToken },
-      body: JSON.stringify({ publicId: existing.publicId, ...draft }),
+      body: JSON.stringify({ publicId: existing.publicId, ...preparedDraft }),
     });
     version = updated.version;
-    const savedChanges: ManagedFlow = { ...existing, ...draft, version, status: "unpublished", updatedAt: new Date().toISOString() };
+    const savedChanges: ManagedFlow = { ...existing, ...preparedDraft, version, status: "unpublished", updatedAt: new Date().toISOString() };
     upsert(savedChanges);
     if (!publish) return savedChanges;
     try {
-      await setRemotePublication(existing.publicId, existing.editToken, version, true);
+      await setRemotePublication(existing.publicId, existing.editToken, version, true, visibility);
     } catch (error) {
       throw publicationFailure(error, savedChanges);
     }
@@ -131,7 +135,7 @@ export async function updateManagedFlow(existing: ManagedFlow, draft: FlowDraft,
     upsert(published);
     return published;
   }
-  const flow: ManagedFlow = { ...existing, ...draft, version, status: publish ? "published" : "unpublished", updatedAt: new Date().toISOString(), updatedBy: publish ? await currentUserDisplayName() : existing.updatedBy };
+  const flow: ManagedFlow = { ...existing, ...preparedDraft, version, status: publish ? "published" : "unpublished", updatedAt: new Date().toISOString(), updatedBy: publish ? await currentUserDisplayName() : existing.updatedBy };
   upsert(flow);
   return flow;
 }
@@ -150,8 +154,9 @@ export function savedFlowFromPublicationError(error: unknown): ManagedFlow | und
 }
 
 export async function setManagedFlowPublished(flow: ManagedFlow, publish: boolean): Promise<ManagedFlow> {
-  if (supabaseUrl()) await setRemotePublication(flow.publicId, flow.editToken, flow.version, publish);
-  const updated: ManagedFlow = { ...flow, status: publish ? "published" : "unpublished", updatedAt: new Date().toISOString(), updatedBy: publish ? await currentUserDisplayName() : flow.updatedBy };
+  const visibility = normalizeFlowVisibility(flow.visibility);
+  if (supabaseUrl()) await setRemotePublication(flow.publicId, flow.editToken, flow.version, publish, visibility);
+  const updated: ManagedFlow = { ...flow, visibility, status: publish ? "published" : "unpublished", updatedAt: new Date().toISOString(), updatedBy: publish ? await currentUserDisplayName() : flow.updatedBy };
   upsert(updated);
   return updated;
 }
@@ -172,37 +177,49 @@ export async function uploadManagedFlowSamples(flow: ManagedFlow, samples: Recor
   }
 }
 
-async function setRemotePublication(publicId: string, token: string, version: number, publish: boolean) {
+async function setRemotePublication(publicId: string, token: string, version: number, publish: boolean, visibility: FlowVisibility) {
   await edge(publish ? "publish-flow" : "unpublish-flow", {
     method: "POST",
     headers: { "x-edit-token": token },
-    body: JSON.stringify({ publicId, version }),
+    body: JSON.stringify({ publicId, version, visibility }),
   });
 }
 
-export async function loadEditableFlow(publicId: string, token?: string): Promise<ManagedFlow> {
+export type EditableManagedFlow = ManagedFlow & { editSamples?: FlowSample[] };
+
+export async function loadEditableFlow(publicId: string, token?: string): Promise<EditableManagedFlow> {
   const local = findManagedFlow(publicId);
-  if (local && (!token || token === local.editToken)) return local;
-  if (!token) throw new Error("編集トークンがありません。編集用URLを確認してください。");
+  const localMatches = Boolean(local && (!token || token === local.editToken));
+  const effectiveToken = token ?? local?.editToken;
+  if (!supabaseUrl() && localMatches) return local!;
+  if (!effectiveToken) throw new Error("編集トークンがありません。編集用URLを確認してください。");
   const remote = await edge<{
     publicId: string; name: string; description: string; status: FlowStatus; version: number;
-    categories?: FlowDraft["categories"]; instruction?: string; inputs: FlowDraft["inputs"]; sql: string; output: FlowDraft["output"]; duckdbVersion: string;
+    visibility?: FlowVisibility; categories?: FlowDraft["categories"]; instruction?: string; aiSamples?: FlowDraft["aiSamples"]; inputs: FlowDraft["inputs"]; sql: string; output: FlowDraft["output"]; duckdbVersion: string; samples?: FlowSample[];
   }>("get-edit-flow", {
     method: "POST",
-    headers: { "x-edit-token": token },
+    headers: { "x-edit-token": effectiveToken },
     body: JSON.stringify({ publicId }),
+  }).catch((error) => {
+    if (localMatches) return undefined;
+    throw error;
   });
+  if (!remote) return local!;
+  const { samples, ...definition } = remote;
   const now = new Date().toISOString();
-  const managed: ManagedFlow = { ...remote, editToken: token, createdAt: now, updatedAt: now };
+  const managed: ManagedFlow = { ...definition, editToken: effectiveToken, createdAt: local?.createdAt ?? now, updatedAt: now };
   upsert(managed);
-  return managed;
+  return {
+    ...managed,
+    editSamples: samples?.map((sample) => ({ ...sample, url: normalizeSampleUrl(sample.url) })),
+  };
 }
 
 export async function loadPublicFlow(publicId: string): Promise<PublicFlow> {
   const baseUrl = supabaseUrl();
   if (baseUrl) {
     try {
-      return await edge<PublicFlow>("get-public-flow", { method: "GET" }, `?id=${encodeURIComponent(publicId)}`);
+      return normalizePublicFlowSampleUrls(await edge<PublicFlow>("get-public-flow", { method: "GET" }, `?id=${encodeURIComponent(publicId)}`));
     } catch (error) {
       const local = localPublicFlow(publicId);
       if (local) return local;
@@ -218,13 +235,33 @@ export async function loadPublicFlow(publicId: string): Promise<PublicFlow> {
   throw new Error("公開処理が見つかりません。");
 }
 
+export function normalizePublicFlowSampleUrls(flow: PublicFlow): PublicFlow {
+  if (!flow.samples?.length) return flow;
+  return {
+    ...flow,
+    samples: flow.samples.map((sample) => ({
+      ...sample,
+      url: normalizeSampleUrl(sample.url),
+    })),
+  };
+}
+
+function normalizeSampleUrl(url: string) {
+  return url.replace(/^http:\/\/([^/]+\.supabase\.co)(?=\/)/i, "https://$1");
+}
+
 export async function loadPublicFlowCatalog(): Promise<PublicFlowSummary[]> {
   if (!supabaseUrl()) return [];
   const result = await edge<{ flows: PublicFlowSummary[] }>("list-public-flows", { method: "GET" });
   return result.flows;
 }
 
-export type GeneratedFlowSql = { sql: string; summary: string; warnings: string[] };
+export type GeneratedFlowSql = {
+  sql: string;
+  summary: string;
+  warnings: string[];
+  samples?: Record<string, AiSampleRow[]>;
+};
 
 export async function generateFlowSql(instruction: string, inputs: FlowDraft["inputs"]): Promise<GeneratedFlowSql> {
   if (!supabaseUrl()) throw new Error("AI生成を利用するにはSupabase Edge Functionsの接続設定が必要です。");
@@ -241,6 +278,9 @@ export async function generateFlowSql(instruction: string, inputs: FlowDraft["in
   if (!result.sql?.trim() || typeof result.summary !== "string" || !Array.isArray(result.warnings)) {
     throw new Error("AI生成結果の形式が不正です。");
   }
+  if (result.samples && (typeof result.samples !== "object" || Array.isArray(result.samples))) {
+    result.samples = undefined;
+  }
   return result;
 }
 
@@ -251,6 +291,7 @@ function localPublicFlow(publicId: string): PublicFlow | undefined {
     publicId: flow.publicId,
     name: flow.name,
     description: flow.description,
+    visibility: normalizeFlowVisibility(flow.visibility),
     categories: flow.categories ?? [],
     instruction: flow.instruction,
     version: flow.version,
@@ -261,6 +302,10 @@ function localPublicFlow(publicId: string): PublicFlow | undefined {
     output: flow.output,
     duckdbVersion: flow.duckdbVersion,
   };
+}
+
+export function normalizeFlowVisibility(value: unknown): FlowVisibility {
+  return value === "unlisted" ? "unlisted" : "public";
 }
 
 async function currentUserDisplayName() {

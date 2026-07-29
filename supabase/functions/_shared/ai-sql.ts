@@ -12,18 +12,50 @@ export type GeneratedSql = {
   sql: string;
   summary: string;
   warnings: string[];
+  samples?: Record<string, Array<Record<string, string | number | boolean | null>>>;
 };
 
-export const generatedSqlJsonSchema = {
-  type: "object",
-  properties: {
-    sql: { type: "string" },
-    summary: { type: "string" },
-    warnings: { type: "array", items: { type: "string" } },
-  },
-  required: ["sql", "summary", "warnings"],
-  additionalProperties: false,
-} as const;
+function generatedSqlJsonSchema(inputs: AiInputSchema[]) {
+  const canGenerateSamples = inputs.reduce((total, input) => total + input.columns.length, 0) <= 30;
+  const samplesObject = {
+    type: "object",
+    properties: Object.fromEntries(inputs.map((input) => [
+      input.tableName,
+      {
+        type: "array",
+        minItems: 5,
+        maxItems: 10,
+        items: {
+          type: "object",
+          properties: Object.fromEntries(input.columns.map((column) => [
+            column.name,
+            sampleValueSchema(column.type),
+          ])),
+          required: input.columns.map((column) => column.name),
+          additionalProperties: false,
+        },
+      },
+    ])),
+    required: inputs.map((input) => input.tableName),
+    additionalProperties: false,
+  };
+  return {
+    type: "object",
+    properties: {
+      sql: { type: "string" },
+      summary: { type: "string" },
+      warnings: { type: "array", items: { type: "string" } },
+      samples: canGenerateSamples ? { anyOf: [samplesObject, { type: "null" }] } : { type: "null" },
+    },
+    required: ["sql", "summary", "warnings", "samples"],
+    additionalProperties: false,
+  };
+}
+
+function sampleValueSchema(type: string) {
+  const primitive = type === "BIGINT" ? "integer" : type === "DOUBLE" ? "number" : type === "BOOLEAN" ? "boolean" : "string";
+  return { anyOf: [{ type: primitive }, { type: "null" }] };
+}
 
 const systemPrompt = `You generate DuckDB SQL for ClavisFlow Studio.
 Return one read-only query that implements the user's Japanese instruction.
@@ -38,6 +70,11 @@ Rules:
 - Do not invent a column. If the instruction cannot be satisfied with the supplied schema, return the safest useful query and explain the limitation in warnings.
 - summary must be a concise Japanese explanation of the query.
 - warnings must be Japanese messages and may be an empty array.
+- When generateSamples is true, samples must contain 5–10 useful editing rows for every supplied table. When it is false, return samples as null.
+- Every sample row must contain every supplied column and use its declared data type. DATE values must use YYYY-MM-DD.
+- Make JOIN keys match across tables where the query needs matches, while also including a few unmatched, null, duplicate, or boundary cases when useful.
+- Use clearly fictional values only. Never include real personal information, URLs, executable formulas, or secrets.
+- The samples are private editing data and are not published automatically.
 
 The CSV rows themselves are not provided. Infer nothing about their values.`;
 
@@ -83,24 +120,31 @@ export function buildResponsesRequest(model: string, instruction: string, inputs
   return {
     model,
     store: false,
-    max_output_tokens: 3000,
+    max_output_tokens: 5000,
     reasoning: { effort },
     input: [
       { role: "system", content: systemPrompt },
-      { role: "user", content: JSON.stringify({ instruction, inputs }) },
+      {
+        role: "user",
+        content: JSON.stringify({
+          instruction,
+          inputs,
+          generateSamples: inputs.reduce((total, input) => total + input.columns.length, 0) <= 30,
+        }),
+      },
     ],
     text: {
       format: {
         type: "json_schema",
         name: "clavisflow_duckdb_sql",
         strict: true,
-        schema: generatedSqlJsonSchema,
+        schema: generatedSqlJsonSchema(inputs),
       },
     },
   };
 }
 
-export function parseResponsesResult(value: unknown): GeneratedSql {
+export function parseResponsesResult(value: unknown, inputs: AiInputSchema[] = []): GeneratedSql {
   if (!value || typeof value !== "object") throw new HttpError(502, "AI APIから不正な応答が返されました。");
   const response = value as Record<string, unknown>;
   if (response.status === "incomplete") {
@@ -145,5 +189,47 @@ export function parseResponsesResult(value: unknown): GeneratedSql {
     const detail = error instanceof Error ? error.message : "安全性を確認できませんでした。";
     throw new HttpError(422, `生成されたSQLを安全性検査で拒否しました: ${detail}`);
   }
-  return { sql, summary, warnings: generated.warnings.map((warning) => String(warning).trim()) };
+  const warnings = generated.warnings.map((warning) => String(warning).trim());
+  const samples = parseGeneratedSamples(generated.samples, inputs);
+  if (inputs.length && !samples) warnings.push("編集用AIサンプルを生成できなかったため、SQLだけを使用します。");
+  return { sql, summary, warnings, samples };
+}
+
+function parseGeneratedSamples(value: unknown, inputs: AiInputSchema[]): GeneratedSql["samples"] {
+  if (!inputs.length) return undefined;
+  try {
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("samples");
+    const sampleRecord = value as Record<string, unknown>;
+    const expectedTables = new Set(inputs.map((input) => input.tableName));
+    if (Object.keys(sampleRecord).some((tableName) => !expectedTables.has(tableName))) throw new Error("tables");
+    const result: NonNullable<GeneratedSql["samples"]> = {};
+    for (const input of inputs) {
+      const rows = sampleRecord[input.tableName];
+      if (!Array.isArray(rows) || rows.length < 5 || rows.length > 20) throw new Error("rows");
+      const expectedColumns = new Set(input.columns.map((column) => column.name));
+      result[input.tableName] = rows.map((candidate) => {
+        if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) throw new Error("row");
+        const row = candidate as Record<string, unknown>;
+        if (Object.keys(row).length !== expectedColumns.size || Object.keys(row).some((column) => !expectedColumns.has(column))) throw new Error("columns");
+        return Object.fromEntries(input.columns.map((column) => {
+          const cell = row[column.name];
+          if (!validSampleValue(cell, column.type)) throw new Error("value");
+          return [column.name, cell];
+        }));
+      });
+    }
+    if (JSON.stringify(result).length > 250_000) throw new Error("size");
+    return result;
+  } catch {
+    return undefined;
+  }
+}
+
+function validSampleValue(value: unknown, type: string): value is string | number | boolean | null {
+  if (value === null) return true;
+  if (type === "BIGINT") return typeof value === "number" && Number.isSafeInteger(value);
+  if (type === "DOUBLE") return typeof value === "number" && Number.isFinite(value);
+  if (type === "BOOLEAN") return typeof value === "boolean";
+  if (typeof value !== "string" || value.length > 500 || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value)) return false;
+  return type !== "DATE" || /^\d{4}-\d{2}-\d{2}$/.test(value);
 }

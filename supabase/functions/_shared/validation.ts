@@ -3,6 +3,8 @@ import { HttpError } from "./errors.ts";
 const blocked = new Set(["ALTER","ATTACH","CALL","COPY","CREATE","DELETE","DETACH","DROP","EXPORT","IMPORT","INSERT","INSTALL","LOAD","MERGE","PRAGMA","REPLACE","SET","TRUNCATE","UPDATE","VACUUM"]);
 const readers = new Set(["GLOB","HTTPFS","PARQUET_SCAN","POSTGRES_SCAN","READ_BLOB","READ_CSV","READ_CSV_AUTO","READ_JSON","READ_JSON_AUTO","READ_NDJSON","READ_PARQUET","SQLITE_SCAN"]);
 const categories = new Set(["整形", "集計", "結合", "変換", "チェック", "抽出"]);
+const visibilities = new Set(["public", "unlisted"]);
+export type FlowVisibility = "public" | "unlisted";
 
 export function assertSafeSql(sql: unknown): asserts sql is string {
   if (typeof sql !== "string" || !sql.trim() || sql.length > 50_000) throw new HttpError(400, "SQLが空か、長すぎます。");
@@ -45,4 +47,48 @@ export function assertDefinition(body: Record<string, unknown>) {
     body.categories.some((category) => typeof category !== "string" || !categories.has(category))) {
     throw new HttpError(400, "カテゴリを1つ以上選択してください。");
   }
+  assertAiSamples(body.aiSamples);
+  flowVisibility(body.visibility);
+}
+
+export function flowVisibility(value: unknown, fallback: FlowVisibility = "public"): FlowVisibility {
+  if (value === undefined || value === null || value === "") return fallback;
+  if (typeof value !== "string" || !visibilities.has(value)) throw new HttpError(400, "公開範囲が不正です。");
+  return value as FlowVisibility;
+}
+
+function assertAiSamples(value: unknown) {
+  if (value === undefined || value === null) return;
+  if (!value || typeof value !== "object" || Array.isArray(value) || JSON.stringify(value).length > 250_000) {
+    throw new HttpError(400, "編集用AIサンプルが不正です。");
+  }
+  const sample = value as Record<string, unknown>;
+  if (typeof sample.generatedAt !== "string" || sample.generatedAt.length > 50 ||
+    typeof sample.definitionSignature !== "string" || sample.definitionSignature.length > 128 ||
+    !sample.inputs || typeof sample.inputs !== "object" || Array.isArray(sample.inputs)) {
+    throw new HttpError(400, "編集用AIサンプルが不正です。");
+  }
+  const inputs = Object.entries(sample.inputs as Record<string, unknown>);
+  if (!inputs.length || inputs.length > 10) throw new HttpError(400, "編集用AIサンプルの入力数が不正です。");
+  for (const [tableName, rows] of inputs) {
+    if (!/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(tableName) || !Array.isArray(rows) || rows.length < 1 || rows.length > 20) {
+      throw new HttpError(400, "編集用AIサンプルの行定義が不正です。");
+    }
+    for (const row of rows) {
+      if (!row || typeof row !== "object" || Array.isArray(row) || Object.keys(row).length > 300) {
+        throw new HttpError(400, "編集用AIサンプルの列定義が不正です。");
+      }
+      for (const [column, cell] of Object.entries(row as Record<string, unknown>)) {
+        if (!column || column.length > 256 || !validAiSampleCell(cell)) {
+          throw new HttpError(400, "編集用AIサンプルの値が不正です。");
+        }
+      }
+    }
+  }
+}
+
+function validAiSampleCell(value: unknown) {
+  return value === null || typeof value === "boolean" ||
+    typeof value === "number" && Number.isFinite(value) ||
+    typeof value === "string" && value.length <= 500 && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value);
 }

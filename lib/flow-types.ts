@@ -28,10 +28,20 @@ export interface FlowOutput {
   enabled?: boolean;
 }
 
+export type AiSampleValue = string | number | boolean | null;
+export type AiSampleRow = Record<string, AiSampleValue>;
+
+export interface AiSampleSet {
+  generatedAt: string;
+  definitionSignature: string;
+  inputs: Record<string, AiSampleRow[]>;
+}
+
 export interface PublicFlow {
   publicId: string;
   name: string;
   description: string;
+  visibility?: FlowVisibility;
   instruction?: string;
   version: number;
   updatedAt?: string;
@@ -54,8 +64,10 @@ export interface FlowSample {
 export interface FlowDraft {
   name: string;
   description: string;
+  visibility?: FlowVisibility;
   categories?: FlowCategory[];
   instruction?: string;
+  aiSamples?: AiSampleSet;
   inputs: FlowInput[];
   sql: string;
   output: FlowOutput;
@@ -72,6 +84,7 @@ export interface PublicFlowSummary {
 }
 
 export type FlowStatus = "draft" | "published" | "unpublished";
+export type FlowVisibility = "public" | "unlisted";
 
 export interface ManagedFlow extends FlowDraft {
   publicId: string;

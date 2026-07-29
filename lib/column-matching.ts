@@ -68,7 +68,11 @@ function scoreColumn(required: InputColumn, header: string, actualType: InputCol
   if (normalizedAliases.includes(normalizedHeader)) return 0.91;
 
   const comparedNames = [normalizedRequired, ...normalizedAliases];
-  const nameScore = Math.max(...comparedNames.map((candidate) => similarity(candidate, normalizedHeader)));
+  const nameScore = Math.max(...comparedNames.map((candidate) => Math.max(
+    levenshteinSimilarity(candidate, normalizedHeader),
+    jaroWinklerSimilarity(candidate, normalizedHeader),
+    partialSimilarity(candidate, normalizedHeader),
+  )));
   const typeScore = compatibleType(required.type, actualType) ? 0.08 : 0;
   const sampleScore = sampleLooksCompatible(required.type, samples) ? 0.05 : 0;
   return Math.min(0.84, nameScore * 0.76 + typeScore + sampleScore);
@@ -88,7 +92,7 @@ function sampleLooksCompatible(type: InputColumn["type"], values: string[]) {
   return true;
 }
 
-function similarity(left: string, right: string) {
+function levenshteinSimilarity(left: string, right: string) {
   if (!left.length || !right.length) return 0;
   const rows = Array.from({ length: left.length + 1 }, (_, index) => index);
   for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
@@ -105,4 +109,43 @@ function similarity(left: string, right: string) {
     }
   }
   return 1 - rows[left.length] / Math.max(left.length, right.length);
+}
+
+function partialSimilarity(left: string, right: string) {
+  if (!left.length || !right.length || (!left.includes(right) && !right.includes(left))) return 0;
+  return 0.82 + 0.14 * (Math.min(left.length, right.length) / Math.max(left.length, right.length));
+}
+
+function jaroWinklerSimilarity(left: string, right: string) {
+  if (left === right) return 1;
+  if (!left.length || !right.length) return 0;
+  const distance = Math.max(0, Math.floor(Math.max(left.length, right.length) / 2) - 1);
+  const leftMatches = new Array(left.length).fill(false) as boolean[];
+  const rightMatches = new Array(right.length).fill(false) as boolean[];
+  let matches = 0;
+
+  for (let leftIndex = 0; leftIndex < left.length; leftIndex += 1) {
+    const start = Math.max(0, leftIndex - distance);
+    const end = Math.min(leftIndex + distance + 1, right.length);
+    for (let rightIndex = start; rightIndex < end; rightIndex += 1) {
+      if (rightMatches[rightIndex] || left[leftIndex] !== right[rightIndex]) continue;
+      leftMatches[leftIndex] = true;
+      rightMatches[rightIndex] = true;
+      matches += 1;
+      break;
+    }
+  }
+  if (!matches) return 0;
+
+  const leftOrdered = [...left].filter((_, index) => leftMatches[index]);
+  const rightOrdered = [...right].filter((_, index) => rightMatches[index]);
+  const transpositions = leftOrdered.reduce((total, character, index) => total + (character === rightOrdered[index] ? 0 : 1), 0) / 2;
+  const jaro = (
+    matches / left.length +
+    matches / right.length +
+    (matches - transpositions) / matches
+  ) / 3;
+  let prefix = 0;
+  while (prefix < Math.min(4, left.length, right.length) && left[prefix] === right[prefix]) prefix += 1;
+  return jaro + prefix * 0.1 * (1 - jaro);
 }

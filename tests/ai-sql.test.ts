@@ -15,10 +15,13 @@ test("Responses API request sends schema only and requires structured output", (
   assert.equal(request.text.format.strict, true);
   const serialized = JSON.stringify(request);
   assert.match(serialized, /請求番号/);
+  assert.match(serialized, /generateSamples/);
+  assert.match(serialized, /samples/);
   assert.doesNotMatch(serialized, /CSVの行データ/);
 });
 
 test("Responses API structured result is parsed and safety-checked", () => {
+  const parsedInputs = parseAiInputSchemas(inputs);
   const result = parseResponsesResult({
     status: "completed",
     output: [{
@@ -29,12 +32,31 @@ test("Responses API structured result is parsed and safety-checked", () => {
           sql: 'SELECT "請求番号", SUM("請求金額") AS "請求合計" FROM "input_1" GROUP BY "請求番号"',
           summary: "請求番号ごとの請求額を集計します。",
           warnings: [],
+          samples: {
+            input_1: Array.from({ length: 5 }, (_, index) => ({ 請求番号: `請求${index + 1}`, 請求金額: 1000 + index })),
+            input_2: Array.from({ length: 5 }, (_, index) => ({ 請求番号: `請求${index + 1}`, 入金額: 1000 + index })),
+          },
         }),
       }],
     }],
-  });
+  }, parsedInputs);
   assert.match(result.sql, /^SELECT/);
   assert.deepEqual(result.warnings, []);
+  assert.equal(result.samples?.input_1.length, 5);
+});
+
+test("invalid editing samples do not discard otherwise safe SQL", () => {
+  const result = parseResponsesResult({
+    status: "completed",
+    output_text: JSON.stringify({
+      sql: 'SELECT "請求番号" FROM "input_1"',
+      summary: "請求番号を表示します。",
+      warnings: [],
+      samples: { input_1: [{ 請求番号: "請求1" }] },
+    }),
+  }, parseAiInputSchemas(inputs));
+  assert.equal(result.samples, undefined);
+  assert.match(result.warnings.at(-1) ?? "", /AIサンプル/);
 });
 
 test("unsafe generated SQL is rejected", () => {

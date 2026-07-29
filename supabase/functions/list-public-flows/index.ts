@@ -9,6 +9,7 @@ Deno.serve(async (request) => {
     const { data: flows, error: flowError } = await db.from("flows")
       .select("id,public_id,name,description,categories,current_published_version,updated_at")
       .eq("status", "published")
+      .eq("visibility", "public")
       .not("current_published_version", "is", null)
       .order("updated_at", { ascending: false })
       .limit(60);

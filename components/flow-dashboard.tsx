@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { editUrl, listManagedFlows, publicRunUrl, setManagedFlowPublished } from "@/lib/flow-store";
+import { editUrl, listManagedFlows, normalizeFlowVisibility, publicRunUrl, setManagedFlowPublished } from "@/lib/flow-store";
 import type { ManagedFlow } from "@/lib/flow-types";
 
 const statusLabels = { draft: "下書き", published: "公開中", unpublished: "公開停止" } as const;
@@ -58,7 +58,7 @@ export function FlowDashboard() {
               {flows.map((flow) => (
                 <tr key={flow.publicId}>
                   <td><strong>{flow.name}</strong><span>{flow.description || "説明なし"}</span></td>
-                  <td><span className={`status-label ${flow.status}`}>{statusLabels[flow.status]}</span></td>
+                  <td><span className={`status-label ${flow.status}`}>{flow.status === "published" ? normalizeFlowVisibility(flow.visibility) === "unlisted" ? "限定公開" : "一般公開" : statusLabels[flow.status]}</span></td>
                   <td>{flow.version}</td>
                   <td>{formatDate(flow.updatedAt)}</td>
                   <td>
