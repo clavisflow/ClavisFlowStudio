@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import iconv from "iconv-lite";
 import { getSampleTemplate, sampleTemplates, visibleSampleTemplates } from "../lib/sample-templates.ts";
+import { getBundledDemo, getBundledSampleFiles, OFFICIAL_FLOW_PREFIX } from "../lib/demo-flow.ts";
 import { inspectSqlStructure } from "../lib/sql-safety.ts";
 
 test("all sample templates contain safe SQL and the declared number of CSV files", () => {
@@ -11,6 +12,17 @@ test("all sample templates contain safe SQL and the declared number of CSV files
   for (const sample of sampleTemplates) {
     assert.deepEqual(inspectSqlStructure(sample.sql), { safe: true, errors: [] });
     assert.equal(sample.files.length, Number.parseInt(sample.inputSummary, 10));
+  }
+});
+
+test("every visible sample is available as an executable official flow", () => {
+  for (const sample of visibleSampleTemplates) {
+    const publicId = `${OFFICIAL_FLOW_PREFIX}${sample.id}`;
+    const flow = getBundledDemo(publicId);
+    const files = getBundledSampleFiles(publicId);
+    assert.equal(flow?.name, sample.flowName);
+    assert.equal(flow?.inputs.length, sample.files.length);
+    assert.equal(Object.keys(files ?? {}).length, sample.files.length);
   }
 });
 

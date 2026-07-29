@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { ExternalLink, LibraryBig, Pencil, Trash2, X } from "lucide-react";
 import { deleteManagedFlow, editUrl, listManagedFlows, publicRunUrl } from "@/lib/flow-store";
 import type { ManagedFlow } from "@/lib/flow-types";
@@ -45,7 +46,7 @@ export function SavedFlowsPanel() {
       setConfirmingId(undefined);
       if (new URL(window.location.href).searchParams.get("flow") === flow.publicId) window.location.assign("/");
     } catch (deleteError) {
-      setError(deleteError instanceof Error ? deleteError.message : "フローを削除できませんでした。");
+      setError(deleteError instanceof Error ? deleteError.message : "処理を削除できませんでした。");
     } finally {
       setDeletingId(undefined);
     }
@@ -54,18 +55,18 @@ export function SavedFlowsPanel() {
   return (
     <>
       <button ref={triggerRef} type="button" className="saved-flows-trigger" aria-expanded={open} aria-controls="saved-flows-panel" onClick={openPanel}>
-        <LibraryBig size={17} aria-hidden="true" />作成済フロー
+        <LibraryBig size={17} aria-hidden="true" />作成済み処理
       </button>
-      {open && (
+      {open && typeof document !== "undefined" && createPortal(
         <div className="saved-flows-overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>
           <aside id="saved-flows-panel" className="saved-flows-panel" role="dialog" aria-modal="true" aria-labelledby="saved-flows-title">
             <header>
-              <h2 id="saved-flows-title"><LibraryBig size={21} aria-hidden="true" />作成済フロー</h2>
+              <h2 id="saved-flows-title"><LibraryBig size={21} aria-hidden="true" />作成済み処理</h2>
               <button ref={closeRef} type="button" aria-label="閉じる" onClick={close}><X size={21} aria-hidden="true" /></button>
             </header>
             {error && <div className="saved-flows-error">{error}</div>}
             {flows.length === 0 ? (
-              <p className="saved-flows-empty">このブラウザで作成したフローはありません。</p>
+              <p className="saved-flows-empty">このブラウザで作成した処理はありません。</p>
             ) : (
               <div className="saved-flow-list">
                 {flows.map((flow) => (
@@ -91,7 +92,8 @@ export function SavedFlowsPanel() {
               </div>
             )}
           </aside>
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   );

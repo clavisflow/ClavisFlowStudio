@@ -1,13 +1,18 @@
 import type { EffectiveEncoding, PublicFlow } from "./flow-types";
+import type { FlowCategory } from "./flow-categories";
+import { visibleSampleTemplates } from "./sample-templates.ts";
 
 export const DEMO_PUBLIC_ID = "invoice-payment-check";
+const OFFICIAL_UPDATED_AT = "2026-07-29T00:00:00+09:00";
 
 export const demoFlow: PublicFlow = {
   publicId: DEMO_PUBLIC_ID,
   name: "請求・入金チェック",
   description: "請求番号で請求CSVと入金CSVを照合し、一致・金額不一致・未入金・請求なし入金に分類します。",
+  categories: ["チェック"],
   instruction: "請求データと入金データを請求番号で突き合わせて、入金済み、金額違い、未入金、請求のない入金が分かるようにして。",
   version: 1,
+  updatedAt: OFFICIAL_UPDATED_AT,
   inputs: [
     {
       id: "invoices",
@@ -78,10 +83,62 @@ const demoSampleFiles: Record<string, BundledSampleFile> = {
   },
 };
 
+export const OFFICIAL_FLOW_PREFIX = "official-";
+
+const sampleHeaders: Record<string, string[]> = {
+  "/samples/invoices-cp932.csv": ["請求番号", "請求先", "請求金額"],
+  "/samples/payments-utf8-bom.csv": ["請求番号", "入金日", "入金額"],
+  "/samples/sales-shift-jis.csv": ["売上日", "商品コード", "商品名", "数量", "売上金額"],
+  "/samples/product-master-utf8.csv": ["商品コード", "商品名", "分類"],
+  "/samples/inventory-utf8-bom.csv": ["商品コード", "商品名", "現在庫", "入荷予定", "発注点"],
+  "/samples/customers-utf8-bom.csv": ["顧客ID", "氏名", "メールアドレス", "電話番号"],
+};
+
+const officialFlows = visibleSampleTemplates.map<PublicFlow>((sample) => ({
+  publicId: `${OFFICIAL_FLOW_PREFIX}${sample.id}`,
+  name: sample.flowName,
+  description: sample.description,
+  categories: [officialCategory(sample.id)],
+  instruction: sample.instruction,
+  version: 1,
+  updatedAt: OFFICIAL_UPDATED_AT,
+  inputs: sample.files.map((file, index) => ({
+    id: `input-${index + 1}`,
+    label: file.label,
+    tableName: `input_${index + 1}`,
+    encoding: "auto",
+    delimiter: ",",
+    requiredColumns: (sampleHeaders[file.url] ?? []).map((name) => ({ name, type: "VARCHAR" as const, required: true })),
+  })),
+  sql: sample.sql,
+  output: sample.output,
+  duckdbVersion: "1.32.0",
+}));
+
+function officialCategory(sampleId: string): FlowCategory {
+  if (sampleId === "sales-by-product") return "集計";
+  if (sampleId === "attach-product-master") return "結合";
+  if (sampleId === "low-inventory") return "抽出";
+  if (sampleId === "customer-data-check") return "整形";
+  return "チェック";
+}
+
+const officialSampleFiles = Object.fromEntries(
+  visibleSampleTemplates.map((sample) => [
+    `${OFFICIAL_FLOW_PREFIX}${sample.id}`,
+    Object.fromEntries(sample.files.map((file, index) => [
+      `input_${index + 1}`,
+      { name: file.name, url: file.url, encoding: file.encoding, headers: sampleHeaders[file.url] ?? [] },
+    ])),
+  ]),
+) as Record<string, Record<string, BundledSampleFile>>;
+
 export function getBundledDemo(publicId: string): PublicFlow | undefined {
-  return publicId === DEMO_PUBLIC_ID ? demoFlow : undefined;
+  if (publicId === DEMO_PUBLIC_ID) return demoFlow;
+  return officialFlows.find((flow) => flow.publicId === publicId);
 }
 
 export function getBundledSampleFiles(publicId: string): Record<string, BundledSampleFile> | undefined {
-  return publicId === DEMO_PUBLIC_ID ? demoSampleFiles : undefined;
+  if (publicId === DEMO_PUBLIC_ID) return demoSampleFiles;
+  return officialSampleFiles[publicId];
 }

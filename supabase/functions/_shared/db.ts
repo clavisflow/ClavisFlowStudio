@@ -27,3 +27,26 @@ export async function requireEditor(publicId: string, token: string) {
   if (!data) throw new HttpError(403, "編集トークンが正しくありません。");
   return { db, flow: data };
 }
+
+export async function optionalUser(request: Request) {
+  const authorization = request.headers.get("authorization") ?? "";
+  const token = authorization.startsWith("Bearer ") ? authorization.slice(7).trim() : "";
+  if (!token) return;
+  const db = adminClient();
+  const { data, error } = await db.auth.getUser(token);
+  if (error || !data.user) throw new HttpError(401, "ログイン情報を確認できませんでした。");
+  return data.user;
+}
+
+export async function requireUser(request: Request) {
+  const user = await optionalUser(request);
+  if (!user) throw new HttpError(401, "この操作にはログインが必要です。");
+  return user;
+}
+
+export function userDisplayName(user: { email?: string; user_metadata?: Record<string, unknown> }) {
+  const metadata = user.user_metadata ?? {};
+  const value = [metadata.full_name, metadata.name].find((candidate) => typeof candidate === "string" && candidate.trim());
+  const name = typeof value === "string" ? value.trim() : user.email?.trim();
+  return (name || "ログインユーザー").slice(0, 160);
+}

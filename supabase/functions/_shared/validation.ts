@@ -2,6 +2,7 @@ import { HttpError } from "./errors.ts";
 
 const blocked = new Set(["ALTER","ATTACH","CALL","COPY","CREATE","DELETE","DETACH","DROP","EXPORT","IMPORT","INSERT","INSTALL","LOAD","MERGE","PRAGMA","REPLACE","SET","TRUNCATE","UPDATE","VACUUM"]);
 const readers = new Set(["GLOB","HTTPFS","PARQUET_SCAN","POSTGRES_SCAN","READ_BLOB","READ_CSV","READ_CSV_AUTO","READ_JSON","READ_JSON_AUTO","READ_NDJSON","READ_PARQUET","SQLITE_SCAN"]);
+const categories = new Set(["整形", "集計", "結合", "変換", "チェック", "抽出"]);
 
 export function assertSafeSql(sql: unknown): asserts sql is string {
   if (typeof sql !== "string" || !sql.trim() || sql.length > 50_000) throw new HttpError(400, "SQLが空か、長すぎます。");
@@ -39,4 +40,9 @@ export function assertDefinition(body: Record<string, unknown>) {
   assertSafeSql(body.sql);
   if (!Array.isArray(body.inputs) || body.inputs.length < 1 || body.inputs.length > 2) throw new HttpError(400, "入力定義は1～2件必要です。");
   if (!body.output || typeof body.output !== "object") throw new HttpError(400, "出力定義が必要です。");
+  if (!Array.isArray(body.categories) || body.categories.length < 1 || body.categories.length > categories.size ||
+    new Set(body.categories).size !== body.categories.length ||
+    body.categories.some((category) => typeof category !== "string" || !categories.has(category))) {
+    throw new HttpError(400, "カテゴリを1つ以上選択してください。");
+  }
 }

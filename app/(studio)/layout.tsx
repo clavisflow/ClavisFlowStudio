@@ -1,16 +1,16 @@
-import { CapabilitiesPanel } from "@/components/capabilities-panel";
-import { SavedFlowsPanel } from "@/components/saved-flows-panel";
-import { SamplesPanel } from "@/components/samples-panel";
-import { StudioHomeLink } from "@/components/studio-home-link";
+import { SiteFooter } from "@/components/site-footer";
+import { PortalSidebar } from "@/components/portal-sidebar";
+import { PortalHeader } from "@/components/portal-header";
 
 export default function StudioLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <>
-      <header className="studio-header">
-        <StudioHomeLink />
-        <div className="header-tools"><SavedFlowsPanel /><SamplesPanel /><CapabilitiesPanel /></div>
-      </header>
-      {children}
-    </>
+    <div className="portal portal-app-shell">
+      <PortalSidebar />
+      <div className="portal-main portal-shell-main">
+        <PortalHeader />
+        {children}
+        <SiteFooter />
+      </div>
+    </div>
   );
 }

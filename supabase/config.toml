@@ -30,3 +30,9 @@ verify_jwt = false
 verify_jwt = false
 [functions.generate-sql]
 verify_jwt = false
+[functions.upload-flow-sample]
+verify_jwt = false
+[functions.get-flow-sample]
+verify_jwt = false
+[functions.list-public-flows]
+verify_jwt = false

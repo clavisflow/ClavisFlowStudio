@@ -37,23 +37,23 @@ export function FlowDashboard() {
   return (
     <main className="studio-shell">
       <div className="page-heading-row">
-        <div><h1>フロー一覧</h1><p>作成したデータ処理の編集と公開管理を行います。</p></div>
-        <Link className="button primary" href="/flows/new/">フローを作成</Link>
+        <div><h1>処理一覧</h1><p>作成したデータ処理の編集と公開管理を行います。</p></div>
+        <Link className="button primary" href="/flows/new/">自分の処理を作る</Link>
       </div>
 
       {error && <div className="error-message">{error}</div>}
       {ready && flows.length === 0 && (
         <section className="empty-state">
-          <h2>フローはまだありません</h2>
-          <p>CSVの入力定義とSQLを設定して、最初のフローを作成してください。</p>
-          <Link className="button primary" href="/flows/new/">フローを作成</Link>
+          <h2>処理はまだありません</h2>
+          <p>CSVの入力定義とSQLを設定して、最初の処理を作成してください。</p>
+          <Link className="button primary" href="/flows/new/">自分の処理を作る</Link>
         </section>
       )}
 
       {flows.length > 0 && (
         <div className="flow-table-wrap">
           <table className="flow-table">
-            <thead><tr><th>フロー名</th><th>状態</th><th>バージョン</th><th>更新日時</th><th>操作</th></tr></thead>
+            <thead><tr><th>処理名</th><th>状態</th><th>バージョン</th><th>更新日時</th><th>操作</th></tr></thead>
             <tbody>
               {flows.map((flow) => (
                 <tr key={flow.publicId}>

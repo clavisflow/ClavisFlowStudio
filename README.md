@@ -2,7 +2,7 @@
 
 **毎月のデータ処理を、URLにする。**
 
-ClavisFlow Studioは、CSVから繰り返し使えるデータ処理を作成し、ログイン不要の実行URLとして公開できるNext.jsアプリです。CSV本体はAzure、Supabase、AI APIへ送信せず、ブラウザ内だけで処理します。
+ClavisFlow Studioは、CSVから繰り返し使えるデータ処理を作成し、ログイン不要の実行URLとして公開できるNext.jsアプリです。実行時に選んだデータはブラウザ内だけで処理します。作成者が明示的に公開サンプルとして追加したファイルだけをSupabase Storageへ保存します。
 
 ## 実装済みの範囲
 
@@ -33,7 +33,7 @@ ClavisFlow Studioは、CSVから繰り返し使えるデータ処理を作成し
 - `/flows/edit/?flow=<公開ID>`：新バージョンの保存と公開管理
 - `/run/?flow=<公開ID>`：ログイン不要の公開実行画面
 
-MVPでは通常認証とユーザー単位のFlow一覧を表示しません。作成・編集したFlowの参照と編集トークンはブラウザの`localStorage`へ保持し、保存完了画面から編集用URLを取得します。Flow定義の正本はSupabaseにあり、CSV本文は`localStorage`にもSupabaseにも保存しません。Supabase未接続のローカル開発では、Flow定義だけをブラウザへ保存して画面遷移を検証できます。
+作成・編集したFlowの参照と編集トークンはブラウザの`localStorage`へ保持し、保存完了画面から編集用URLを取得します。Googleログイン時は公開者名と所有者IDを記録でき、ログインユーザーだけが公開サンプルを追加できます。通常の入力ファイルは保存せず、明示的に追加された公開サンプルだけをSupabase Storageへ保存します。Supabase未接続のローカル開発では、Flow定義だけをブラウザへ保存して画面遷移を検証できます。
 
 Flow作成は「ファイルを追加」「処理を作成」「結果を確認」「公開」の順です。CSVの行数、列名、文字コード、列型はWeb Workerで自動解析し、ファイル本体をReact stateやサーバーへ保存しません。
 
@@ -84,6 +84,8 @@ npx supabase link --project-ref YOUR_PROJECT_REF
 npx supabase db push
 ```
 
+Supabase DashboardのAuthentication ProvidersでGoogleを有効にし、Google OAuthのClient IDとClient Secretを設定します。Redirect URLsにはローカルの`http://localhost:3000/auth/callback/**`と、本番URLの`/auth/callback/**`を追加してください。
+
 3. Edge Function用シークレットを`supabase/.env`へ作成します。`SUPABASE_URL`と`SUPABASE_SERVICE_ROLE_KEY`はSupabase側で自動提供されるため、本番用の手動登録は不要です。
 
 ```dotenv
@@ -118,12 +120,15 @@ npx supabase functions deploy get-edit-flow
 npx supabase functions deploy unpublish-flow
 npx supabase functions deploy delete-flow
 npx supabase functions deploy generate-sql
+npx supabase functions deploy upload-flow-sample
+npx supabase functions deploy get-flow-sample
 ```
 
 5. Azureビルド環境とローカルの`.env.local`へ、ブラウザ公開可能なURLだけを設定します。
 
 ```dotenv
 NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=YOUR_ANON_OR_PUBLISHABLE_KEY
 ```
 
 Service RoleキーとAI APIキーには`NEXT_PUBLIC_`を付けないでください。フロントエンドのバンドルへ入れてはいけません。
@@ -139,8 +144,12 @@ Service RoleキーとAI APIキーには`NEXT_PUBLIC_`を付けないでくださ
 | `get-edit-flow` | POST | `x-edit-token` |
 | `unpublish-flow` | POST | `x-edit-token` |
 | `generate-sql` | POST | 公開（ブラウザID・IP・全体件数で制限） |
+| `upload-flow-sample` | POST | Googleログイン＋`x-edit-token` |
+| `get-flow-sample` | GET | 現在公開中のサンプルのみ匿名 |
 
 作成・更新の定義本文は`inputs`, `sql`, `output`, `duckdbVersion`です。更新は常に次の`flow_versions.version_number`を挿入し、既存公開版を変更しません。
+
+公開サンプルはCSV・Excel（`.xlsx`）・JSONに対応し、1ファイル5MB、1処理合計10MBまでです。想定外のStorage使用量を避けるため、サービス全体が500MBに達した時点で新しいサンプル保存を停止します。
 
 ### 匿名APIの利用回数制限
 

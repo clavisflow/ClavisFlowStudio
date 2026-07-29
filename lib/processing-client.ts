@@ -16,7 +16,7 @@ export class ProcessingClient {
     return result;
   }
 
-  run(flow: PublicFlow, files: Array<{ tableName: string; file: File; encoding: CsvEncoding; delimiter: string }>): Promise<QueryResult> {
+  run(flow: PublicFlow, files: Array<{ tableName: string; file: File; encoding: CsvEncoding; delimiter: string; headerRow: number; columnMapping: Record<string, string> }>): Promise<QueryResult> {
     const prepared = Promise.all(files.map(async (item) => ({ ...item, bytes: await item.file.arrayBuffer(), file: undefined })));
     return this.request("run", { flow, files: prepared }, 60_000) as Promise<QueryResult>;
   }

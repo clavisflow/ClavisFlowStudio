@@ -16,7 +16,7 @@ type RunMessage = {
   id: string;
   type: "run";
   flow: PublicFlow;
-  files: Array<{ tableName: string; bytes: ArrayBuffer; encoding: CsvEncoding; delimiter: string }>;
+  files: Array<{ tableName: string; bytes: ArrayBuffer; encoding: CsvEncoding; delimiter: string; headerRow: number; columnMapping: Record<string, string> }>;
 };
 type RequestMessage = AnalyzeMessage | WarmupMessage | RunMessage;
 type DuckDbEngine = { db: duckdb.AsyncDuckDB; worker: Worker };
@@ -40,6 +40,7 @@ scope.onmessage = async (event: MessageEvent<RequestMessage>) => {
         headers: structure.headers,
         rowCount: structure.rowCount,
         columnTypes: structure.columnTypes,
+        sampleValues: structure.sampleValues,
         replacementCount: decoded.replacementCount,
         warning: decoded.warning,
       };
@@ -189,7 +190,15 @@ function analyzeCsv(text: string, delimiter: string, requestedHeaderRow: number)
   if (value || row.length) commitRow();
   if (!headers || !headers.length || headers.some((header) => !header)) throw new Error("指定したヘッダー行から列名を読み取れません。空の列名がないか確認してください。");
   if (new Set(headers).size !== headers.length) throw new Error("CSVヘッダーに重複する列名があります。");
-  return { headers, rowCount, columnTypes: headers.map((_, index) => inferColumnType(samples.map((sample) => sample[index] ?? ""))) };
+  return {
+    headers,
+    rowCount,
+    columnTypes: headers.map((_, index) => inferColumnType(samples.map((sample) => sample[index] ?? ""))),
+    sampleValues: Object.fromEntries(headers.map((header, index) => [
+      header,
+      samples.map((sample) => sample[index] ?? "").filter(Boolean).slice(0, 3),
+    ])),
+  };
 }
 
 function inferColumnType(values: string[]): InputColumn["type"] {
@@ -221,16 +230,29 @@ async function executeFlow(message: RunMessage): Promise<QueryResult> {
       if (!file) throw new Error(`${input.label}が選択されていません。`);
       const decoded = decodeCsv(new Uint8Array(file.bytes), file.encoding);
       if (decoded.replacementCount || decoded.warning) throw new Error(`${input.label}: ${decoded.warning}`);
-      const headerRow = input.headerRow ?? 1;
+      const headerRow = file.headerRow ?? input.headerRow ?? 1;
       const headers = analyzeCsv(decoded.text, file.delimiter, headerRow).headers;
-      const missing = input.requiredColumns.filter((column) => column.required && !headers.includes(column.name));
+      const missing = input.requiredColumns.filter((column) => {
+        const mappedHeader = file.columnMapping[column.name];
+        return !mappedHeader || !headers.includes(mappedHeader);
+      });
       if (missing.length) throw new Error(`${input.label}に必須列がありません: ${missing.map((column) => column.name).join("、")}`);
       const fileName = `${input.tableName}.csv`;
       await db.registerFileBuffer(fileName, new TextEncoder().encode(decoded.text));
       registeredFiles.push(fileName);
       const delimiter = file.delimiter.replaceAll("'", "''");
       const skip = Math.max(0, headerRow - 1);
-      await connection.query(`CREATE OR REPLACE TEMP VIEW "${input.tableName}" AS SELECT * FROM read_csv_auto('${fileName}', header = true, skip = ${skip}, delim = '${delimiter}', sample_size = -1, normalize_names = false)`);
+      const rawTableName = `__raw_${input.tableName}`;
+      const quotedRawTable = quoteIdentifier(rawTableName);
+      await connection.query(`CREATE OR REPLACE TEMP VIEW ${quotedRawTable} AS SELECT * FROM read_csv_auto('${fileName}', header = true, skip = ${skip}, delim = '${delimiter}', sample_size = -1, normalize_names = false)`);
+      const existing = new Set(headers);
+      const remappedTargets = new Set(input.requiredColumns.filter((column) => file.columnMapping[column.name] !== column.name).map((column) => column.name));
+      const originalColumns = headers.filter((header) => !remappedTargets.has(header)).map(quoteIdentifier);
+      const aliases = input.requiredColumns
+        .filter((column) => file.columnMapping[column.name] !== column.name || !existing.has(column.name))
+        .map((column) => `${quoteIdentifier(file.columnMapping[column.name])} AS ${quoteIdentifier(column.name)}`);
+      const projection = [...originalColumns, ...aliases].join(", ");
+      await connection.query(`CREATE OR REPLACE TEMP VIEW ${quoteIdentifier(input.tableName)} AS SELECT ${projection} FROM ${quotedRawTable}`);
     }
 
     scope.postMessage({ id: message.id, type: "progress", phase: "DuckDBでSQLを実行しています" });
@@ -251,6 +273,10 @@ async function executeFlow(message: RunMessage): Promise<QueryResult> {
 
 function normalizeRow(row: Record<string, unknown>, columns: string[], columnKinds: Record<string, ResultColumnKind>): Record<string, string | number | boolean | null> {
   return Object.fromEntries(columns.map((column) => [column, normalizeResultValue(row[column], columnKinds[column] ?? "text")]));
+}
+
+function quoteIdentifier(value: string) {
+  return `"${value.replaceAll('"', '""')}"`;
 }
 
 export {};

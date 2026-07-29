@@ -1,5 +1,6 @@
 import { getBundledDemo } from "./demo-flow.ts";
-import type { FlowDraft, FlowStatus, ManagedFlow, PublicFlow } from "./flow-types.ts";
+import type { FlowDraft, FlowStatus, ManagedFlow, PublicFlow, PublicFlowSummary } from "./flow-types.ts";
+import { currentAccessToken, getSupabaseBrowserClient } from "./supabase-browser.ts";
 
 const STORAGE_KEY = "clavisflow-studio:managed-flows:v1";
 const CLIENT_ID_KEY = "clavisflow-studio:anonymous-client-id:v1";
@@ -43,7 +44,11 @@ async function edge<T>(functionName: string, init: RequestInit = {}, query = "")
   if (!baseUrl) throw new Error("Supabase is not configured");
   const headers = new Headers(init.headers);
   if (!headers.has("Accept")) headers.set("Accept", "application/json");
-  if (!headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+  if (!headers.has("Content-Type") && !(init.body instanceof FormData)) headers.set("Content-Type", "application/json");
+  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (anonKey) headers.set("apikey", anonKey);
+  const accessToken = await currentAccessToken();
+  if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
   if (functionName === "create-flow" || functionName === "generate-sql") {
     headers.set("x-clavis-client-id", anonymousClientId());
   }
@@ -52,7 +57,7 @@ async function edge<T>(functionName: string, init: RequestInit = {}, query = "")
     headers,
   });
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.error ?? "フローAPIの呼び出しに失敗しました。");
+  if (!response.ok) throw new Error(body.error ?? "処理APIの呼び出しに失敗しました。");
   return body as T;
 }
 
@@ -95,12 +100,12 @@ export async function createManagedFlow(draft: FlowDraft, publish: boolean): Pro
     } catch (error) {
       throw publicationFailure(error, savedDraft);
     }
-    const published: ManagedFlow = { ...savedDraft, status: "published", updatedAt: new Date().toISOString() };
+    const published: ManagedFlow = { ...savedDraft, status: "published", updatedAt: new Date().toISOString(), updatedBy: await currentUserDisplayName() };
     upsert(published);
     return published;
   }
 
-  const flow: ManagedFlow = { ...draft, publicId, editToken, status: publish ? "published" : "draft", version: 1, createdAt: now, updatedAt: now };
+  const flow: ManagedFlow = { ...draft, publicId, editToken, status: publish ? "published" : "draft", version: 1, createdAt: now, updatedAt: now, updatedBy: publish ? await currentUserDisplayName() : undefined };
   upsert(flow);
   return flow;
 }
@@ -122,11 +127,11 @@ export async function updateManagedFlow(existing: ManagedFlow, draft: FlowDraft,
     } catch (error) {
       throw publicationFailure(error, savedChanges);
     }
-    const published: ManagedFlow = { ...savedChanges, status: "published", updatedAt: new Date().toISOString() };
+    const published: ManagedFlow = { ...savedChanges, status: "published", updatedAt: new Date().toISOString(), updatedBy: await currentUserDisplayName() };
     upsert(published);
     return published;
   }
-  const flow: ManagedFlow = { ...existing, ...draft, version, status: publish ? "published" : "unpublished", updatedAt: new Date().toISOString() };
+  const flow: ManagedFlow = { ...existing, ...draft, version, status: publish ? "published" : "unpublished", updatedAt: new Date().toISOString(), updatedBy: publish ? await currentUserDisplayName() : existing.updatedBy };
   upsert(flow);
   return flow;
 }
@@ -134,7 +139,7 @@ export async function updateManagedFlow(existing: ManagedFlow, draft: FlowDraft,
 function publicationFailure(error: unknown, savedFlow: ManagedFlow) {
   const detail = error instanceof Error ? error.message : "公開処理に失敗しました。";
   return Object.assign(
-    new Error(`フロー定義は保存されましたが公開できませんでした。もう一度「変更を公開」を押すか、作成済フローから再開してください。 ${detail}`, { cause: error }),
+    new Error(`処理定義は保存されましたが公開できませんでした。もう一度「変更を公開」を押すか、作成済み処理から再開してください。 ${detail}`, { cause: error }),
     { savedFlow },
   );
 }
@@ -146,9 +151,25 @@ export function savedFlowFromPublicationError(error: unknown): ManagedFlow | und
 
 export async function setManagedFlowPublished(flow: ManagedFlow, publish: boolean): Promise<ManagedFlow> {
   if (supabaseUrl()) await setRemotePublication(flow.publicId, flow.editToken, flow.version, publish);
-  const updated: ManagedFlow = { ...flow, status: publish ? "published" : "unpublished", updatedAt: new Date().toISOString() };
+  const updated: ManagedFlow = { ...flow, status: publish ? "published" : "unpublished", updatedAt: new Date().toISOString(), updatedBy: publish ? await currentUserDisplayName() : flow.updatedBy };
   upsert(updated);
   return updated;
+}
+
+export async function uploadManagedFlowSamples(flow: ManagedFlow, samples: Record<string, File>): Promise<void> {
+  if (!supabaseUrl()) throw new Error("サンプルの保存にはSupabase接続が必要です。");
+  for (const [inputId, file] of Object.entries(samples)) {
+    const form = new FormData();
+    form.set("publicId", flow.publicId);
+    form.set("version", String(flow.version));
+    form.set("inputId", inputId);
+    form.set("file", file);
+    await edge("upload-flow-sample", {
+      method: "POST",
+      headers: { "x-edit-token": flow.editToken },
+      body: form,
+    });
+  }
 }
 
 async function setRemotePublication(publicId: string, token: string, version: number, publish: boolean) {
@@ -165,7 +186,7 @@ export async function loadEditableFlow(publicId: string, token?: string): Promis
   if (!token) throw new Error("編集トークンがありません。編集用URLを確認してください。");
   const remote = await edge<{
     publicId: string; name: string; description: string; status: FlowStatus; version: number;
-    instruction?: string; inputs: FlowDraft["inputs"]; sql: string; output: FlowDraft["output"]; duckdbVersion: string;
+    categories?: FlowDraft["categories"]; instruction?: string; inputs: FlowDraft["inputs"]; sql: string; output: FlowDraft["output"]; duckdbVersion: string;
   }>("get-edit-flow", {
     method: "POST",
     headers: { "x-edit-token": token },
@@ -194,7 +215,13 @@ export async function loadPublicFlow(publicId: string): Promise<PublicFlow> {
   if (local) return local;
   const bundled = getBundledDemo(publicId);
   if (bundled) return bundled;
-  throw new Error("公開フローが見つかりません。");
+  throw new Error("公開処理が見つかりません。");
+}
+
+export async function loadPublicFlowCatalog(): Promise<PublicFlowSummary[]> {
+  if (!supabaseUrl()) return [];
+  const result = await edge<{ flows: PublicFlowSummary[] }>("list-public-flows", { method: "GET" });
+  return result.flows;
 }
 
 export type GeneratedFlowSql = { sql: string; summary: string; warnings: string[] };
@@ -224,13 +251,27 @@ function localPublicFlow(publicId: string): PublicFlow | undefined {
     publicId: flow.publicId,
     name: flow.name,
     description: flow.description,
+    categories: flow.categories ?? [],
     instruction: flow.instruction,
     version: flow.version,
+    updatedAt: flow.updatedAt,
+    updatedBy: flow.updatedBy,
     inputs: flow.inputs,
     sql: flow.sql,
     output: flow.output,
     duckdbVersion: flow.duckdbVersion,
   };
+}
+
+async function currentUserDisplayName() {
+  const client = getSupabaseBrowserClient();
+  if (!client) return;
+  const { data } = await client.auth.getUser();
+  const user = data.user;
+  if (!user) return;
+  const metadata = user.user_metadata as Record<string, unknown>;
+  const value = [metadata.full_name, metadata.name].find((candidate) => typeof candidate === "string" && candidate.trim());
+  return typeof value === "string" ? value.trim() : user.email;
 }
 
 export function publicRunUrl(publicId: string) {

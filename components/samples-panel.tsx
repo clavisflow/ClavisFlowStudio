@@ -36,14 +36,14 @@ export function SamplesPanel() {
               <h2 id="samples-title"><FlaskConical size={21} aria-hidden="true" />サンプル</h2>
               <button ref={closeRef} type="button" aria-label="閉じる" onClick={close}><X size={21} aria-hidden="true" /></button>
             </header>
-            <p className="samples-overview">処理例を選ぶと、サンプルCSVを使って通常のフロー作成を始められます。</p>
+            <p className="samples-overview">公式の処理を選ぶと、CSVを選択してすぐに実行できます。</p>
             <div className="sample-list">
               {visibleSampleTemplates.map((sample) => (
                 <article className="sample-row" key={sample.id}>
                   <header><h3>{sample.title}</h3><span>{sample.inputSummary}</span></header>
                   <p>{sample.processingSummary}</p>
                   <div className="sample-actions">
-                    <a className="sample-start-link" href={`/?sample=${encodeURIComponent(sample.id)}`}><Play size={15} aria-hidden="true" />このサンプルで試す</a>
+                    <a className="sample-start-link" href={`/run/?flow=${encodeURIComponent(`official-${sample.id}`)}`}><Play size={15} aria-hidden="true" />公式処理を使う</a>
                     <div className="sample-downloads" aria-label={`${sample.title}のCSV`}>
                       <span><Download size={14} aria-hidden="true" />CSV</span>
                       {sample.files.map((file) => <a key={file.url} href={file.url} download={file.name}>{file.label}<small>{file.encodingLabel}</small></a>)}

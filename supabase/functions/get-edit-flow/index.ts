@@ -20,6 +20,7 @@ Deno.serve(async (request) => {
       publicId: flow.public_id,
       name: flow.name,
       description: flow.description,
+      categories: flow.categories ?? [],
       status: flow.status,
       version: version.version_number,
       instruction: version.instruction,

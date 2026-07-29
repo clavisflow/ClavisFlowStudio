@@ -1,14 +1,17 @@
-import { ProductIcon } from "@/components/product-icon";
 import { PublicFlowEditLink } from "@/components/public-flow-edit-link";
+import { SiteFooter } from "@/components/site-footer";
+import { PortalSidebar } from "@/components/portal-sidebar";
+import { PortalHeader } from "@/components/portal-header";
 
 export default function PublicFlowLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <>
-      <header className="public-header">
-        <div className="public-brand"><ProductIcon /><span>ClavisFlow Studio</span><span className="public-context">公開フロー</span></div>
-        <PublicFlowEditLink />
-      </header>
-      {children}
-    </>
+    <div className="portal portal-app-shell">
+      <PortalSidebar />
+      <div className="portal-main portal-shell-main">
+        <PortalHeader extra={<PublicFlowEditLink />} />
+        {children}
+        <SiteFooter />
+      </div>
+    </div>
   );
 }

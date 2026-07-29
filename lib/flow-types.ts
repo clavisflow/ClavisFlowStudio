@@ -1,3 +1,5 @@
+import type { FlowCategory } from "./flow-categories.ts";
+
 export const ENCODINGS = ["auto", "utf-8", "utf-8-bom", "shift_jis", "cp932"] as const;
 export type CsvEncoding = (typeof ENCODINGS)[number];
 export type EffectiveEncoding = Exclude<CsvEncoding, "auto">;
@@ -32,20 +34,41 @@ export interface PublicFlow {
   description: string;
   instruction?: string;
   version: number;
+  updatedAt?: string;
+  updatedBy?: string;
+  categories?: FlowCategory[];
+  samples?: FlowSample[];
   inputs: FlowInput[];
   sql: string;
   output: FlowOutput;
   duckdbVersion: string;
 }
 
+export interface FlowSample {
+  inputId: string;
+  fileName: string;
+  byteSize: number;
+  url: string;
+}
+
 export interface FlowDraft {
   name: string;
   description: string;
+  categories?: FlowCategory[];
   instruction?: string;
   inputs: FlowInput[];
   sql: string;
   output: FlowOutput;
   duckdbVersion: string;
+}
+
+export interface PublicFlowSummary {
+  publicId: string;
+  name: string;
+  description: string;
+  categories: FlowCategory[];
+  updatedAt: string;
+  inputs: FlowInput[];
 }
 
 export type FlowStatus = "draft" | "published" | "unpublished";
@@ -55,6 +78,7 @@ export interface ManagedFlow extends FlowDraft {
   editToken: string;
   status: FlowStatus;
   version: number;
+  updatedBy?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -65,6 +89,7 @@ export interface FileAnalysis {
   headers: string[];
   rowCount: number;
   columnTypes: InputColumn["type"][];
+  sampleValues: Record<string, string[]>;
   replacementCount: number;
   warning?: string;
 }

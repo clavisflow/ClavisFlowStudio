@@ -17,5 +17,5 @@ export function PublicFlowEditLink() {
 
   if (!href) return null;
 
-  return <a className="public-edit-link" href={href}><Pencil size={15} aria-hidden="true" />このフローを編集</a>;
+  return <a className="public-edit-link" href={href}><Pencil size={15} aria-hidden="true" />この処理を編集</a>;
 }

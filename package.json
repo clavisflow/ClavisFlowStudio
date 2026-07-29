@@ -13,13 +13,16 @@
   },
   "dependencies": {
     "@duckdb/duckdb-wasm": "1.32.0",
+    "@supabase/supabase-js": "^2.111.0",
     "buffer": "6.0.3",
     "chardet": "2.2.0",
     "iconv-lite": "0.7.3",
     "lucide-react": "^1.27.0",
     "next": "16.2.12",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "read-excel-file": "^9.3.5",
+    "write-excel-file": "^4.1.1"
   },
   "devDependencies": {
     "@types/node": "24.10.1",

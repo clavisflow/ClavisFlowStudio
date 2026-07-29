@@ -15,7 +15,7 @@ Deno.serve(async (request) => {
     const version = latest.version_number + 1;
     const { error } = await db.from("flow_versions").insert({ flow_id: flow.id, version_number: version, instruction: String(body.instruction ?? "").slice(0, 4000), input_definition: body.inputs, sql: body.sql, output_definition: body.output, duckdb_version: String(body.duckdbVersion ?? "1.32.0") });
     if (error) throw error;
-    const changes: Record<string, string> = {};
+    const changes: Record<string, unknown> = { categories: body.categories };
     if (typeof body.name === "string") changes.name = body.name.slice(0, 120);
     if (typeof body.description === "string") changes.description = body.description.slice(0, 2000);
     if (Object.keys(changes).length) { const { error: updateError } = await db.from("flows").update(changes).eq("id", flow.id); if (updateError) throw updateError; }
