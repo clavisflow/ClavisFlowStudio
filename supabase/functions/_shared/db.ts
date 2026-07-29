@@ -46,7 +46,7 @@ export async function requireUser(request: Request) {
 
 export function userDisplayName(user: { email?: string; user_metadata?: Record<string, unknown> }) {
   const metadata = user.user_metadata ?? {};
-  const value = [metadata.full_name, metadata.name].find((candidate) => typeof candidate === "string" && candidate.trim());
+  const value = [metadata.display_name, metadata.full_name, metadata.name].find((candidate) => typeof candidate === "string" && candidate.trim());
   const name = typeof value === "string" ? value.trim() : user.email?.trim();
   return (name || "ログインユーザー").slice(0, 160);
 }

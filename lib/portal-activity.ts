@@ -1,6 +1,7 @@
 export type FavoriteRecord = {
   active: boolean;
   updatedAt: number;
+  ownerId?: string;
   name?: string;
   description?: string;
   href?: string;
@@ -30,6 +31,7 @@ function normalize(value: unknown): PortalActivity {
       favorites[key] = {
         active: favorite.active,
         updatedAt: Number(favorite.updatedAt),
+        ownerId: typeof favorite.ownerId === "string" ? favorite.ownerId : undefined,
         name: typeof favorite.name === "string" ? favorite.name : undefined,
         description: typeof favorite.description === "string" ? favorite.description : undefined,
         href: typeof favorite.href === "string" ? favorite.href : undefined,
@@ -83,14 +85,14 @@ export function subscribePortalActivity(listener: () => void) {
   };
 }
 
-export function toggleFavorite(processKey: string, metadata?: Pick<FavoriteRecord, "name" | "description" | "href">) {
+export function toggleFavorite(processKey: string, metadata?: Pick<FavoriteRecord, "name" | "description" | "href">, ownerId?: string) {
   const current = readActivity();
   const active = !current.favorites[processKey]?.active;
   writeActivity({
     ...current,
     favorites: {
       ...current.favorites,
-      [processKey]: { ...current.favorites[processKey], ...metadata, active, updatedAt: Date.now() },
+      [processKey]: { ...current.favorites[processKey], ...metadata, active, updatedAt: Date.now(), ownerId },
     },
   });
   return active;
@@ -117,4 +119,22 @@ export function mergeFavoriteRecords(
     if (!localRecord || remoteRecord.updatedAt > localRecord.updatedAt) merged[key] = remoteRecord;
   }
   return merged;
+}
+
+export function mergeRemoteFavoriteRecords(remote: Record<string, FavoriteRecord>, ownerId: string) {
+  const current = readActivity();
+  const scopedLocal = Object.fromEntries(Object.entries(current.favorites).filter(([, favorite]) => !favorite.ownerId || favorite.ownerId === ownerId));
+  const ownedRemote = Object.fromEntries(Object.entries(remote).map(([key, favorite]) => [key, { ...favorite, ownerId }]));
+  const favorites = mergeFavoriteRecords(scopedLocal, ownedRemote);
+  for (const key of Object.keys(ownedRemote)) favorites[key] = { ...favorites[key], ownerId };
+  writeActivity({ ...current, favorites });
+  return favorites;
+}
+
+export function retainFavoriteRecordsForOwner(ownerId?: string) {
+  const current = readActivity();
+  const favorites = Object.fromEntries(Object.entries(current.favorites).filter(([, favorite]) => favorite.ownerId === ownerId));
+  if (Object.keys(favorites).length === Object.keys(current.favorites).length) return favorites;
+  writeActivity({ ...current, favorites });
+  return favorites;
 }

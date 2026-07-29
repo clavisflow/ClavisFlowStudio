@@ -6,8 +6,8 @@ import {
   BarChart3,
   Box,
   CircleHelp,
-  Clock3,
   Combine,
+  Heart,
   Home,
   LayoutGrid,
   Menu,
@@ -18,20 +18,30 @@ import {
   WandSparkles,
   X,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { useState } from "react";
 import { flowCategories, flowCategoryLabels, type FlowCategory } from "@/lib/flow-categories";
 
 export const portalCategories = flowCategories;
 export type PortalCategory = FlowCategory;
 
-const categoryIcons = [WandSparkles, BarChart3, Combine, Box, ShieldCheck, Search];
+export const portalCategoryIcons = {
+  整形: WandSparkles,
+  集計: BarChart3,
+  結合: Combine,
+  変換: Box,
+  チェック: ShieldCheck,
+  抽出: Search,
+} satisfies Record<PortalCategory, LucideIcon>;
 
 type PortalSidebarProps = {
   onCategory?: (category: PortalCategory) => void;
+  onAllProcesses?: () => void;
+  onFavorites?: () => void;
   onGuide?: () => void;
 };
 
-export function PortalSidebar({ onCategory, onGuide }: PortalSidebarProps) {
+export function PortalSidebar({ onCategory, onAllProcesses, onFavorites, onGuide }: PortalSidebarProps) {
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   function closeDrawer() {
@@ -51,20 +61,18 @@ export function PortalSidebar({ onCategory, onGuide }: PortalSidebarProps) {
 
         <nav className="portal-nav">
           <Link className="portal-nav-item" href="/" onClick={closeDrawer}><Home /><span>ホーム</span></Link>
-          <Link className="portal-nav-item" href="/#recommended" onClick={closeDrawer}><LayoutGrid /><span>すべての処理</span></Link>
+          <Link className="portal-nav-item" href="/#recommended" onClick={closeDrawer}><Sparkles /><span>おすすめの処理</span></Link>
+          <Link className="portal-nav-item" href="/#discover" onClick={() => { onAllProcesses?.(); closeDrawer(); }}><LayoutGrid /><span>すべての処理</span></Link>
+          <Link className="portal-nav-item portal-favorite-nav-item" href="/?favorites=1#discover" onClick={() => { onFavorites?.(); closeDrawer(); }}><Heart /><span>お気に入り処理</span></Link>
           <p className="portal-nav-heading">目的から探す</p>
-          {portalCategories.map((item, index) => {
-            const Icon = categoryIcons[index];
+          {portalCategories.map((item) => {
+            const Icon = portalCategoryIcons[item];
             return (
               <Link className="portal-nav-item" href="/#discover" key={item} onClick={() => { onCategory?.(item); closeDrawer(); }}>
                 <Icon /><span>{flowCategoryLabels[item]}</span>
               </Link>
             );
           })}
-          <p className="portal-nav-heading">コレクション</p>
-          <Link className="portal-nav-item" href="/#recommended" onClick={closeDrawer}><Sparkles /><span>おすすめの処理</span></Link>
-          <Link className="portal-nav-item" href="/#latest" onClick={closeDrawer}><Clock3 /><span>新着の処理</span></Link>
-          <Link className="portal-nav-item" href="/#official" onClick={closeDrawer}><ShieldCheck /><span>公式の処理</span></Link>
         </nav>
 
         <div className="portal-sidebar-bottom">

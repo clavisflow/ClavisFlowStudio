@@ -1,6 +1,7 @@
 import { getBundledDemo } from "./demo-flow.ts";
 import type { AiSampleRow, FlowDraft, FlowSample, FlowStatus, FlowVisibility, ManagedFlow, PublicFlow, PublicFlowSummary } from "./flow-types.ts";
 import { currentAccessToken, getSupabaseBrowserClient } from "./supabase-browser.ts";
+import { userDisplayName } from "./user-display-name.ts";
 
 const STORAGE_KEY = "clavisflow-studio:managed-flows:v1";
 const CLIENT_ID_KEY = "clavisflow-studio:anonymous-client-id:v1";
@@ -314,9 +315,7 @@ async function currentUserDisplayName() {
   const { data } = await client.auth.getUser();
   const user = data.user;
   if (!user) return;
-  const metadata = user.user_metadata as Record<string, unknown>;
-  const value = [metadata.full_name, metadata.name].find((candidate) => typeof candidate === "string" && candidate.trim());
-  return typeof value === "string" ? value.trim() : user.email;
+  return userDisplayName(user);
 }
 
 export function publicRunUrl(publicId: string) {

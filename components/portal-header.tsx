@@ -1,20 +1,23 @@
 "use client";
 
-import { Search, X } from "lucide-react";
-import { useState, type FormEvent, type ReactNode } from "react";
+import { LogOut, Search, Settings, X } from "lucide-react";
+import { useRef, useState, type FormEvent, type ReactNode } from "react";
 import { SavedFlowsPanel } from "@/components/saved-flows-panel";
-import { FavoriteFlowsPanel } from "@/components/favorite-flows-panel";
 import { useAuth } from "@/components/auth-provider";
+import { AccountSettingsModal } from "@/components/account-settings-modal";
 
 type PortalHeaderProps = {
   query?: string;
   onQueryChange?: (query: string) => void;
+  onSearchSubmit?: (query: string) => void;
   extra?: ReactNode;
 };
 
-export function PortalHeader({ query, onQueryChange, extra }: PortalHeaderProps) {
+export function PortalHeader({ query, onQueryChange, onSearchSubmit, extra }: PortalHeaderProps) {
   const [localQuery, setLocalQuery] = useState("");
   const [notice, setNotice] = useState("");
+  const [accountSettingsOpen, setAccountSettingsOpen] = useState(false);
+  const accountMenuRef = useRef<HTMLDetailsElement>(null);
   const { user, displayName, loading: authLoading, configured: authConfigured, signInWithGoogle, signOut } = useAuth();
   const controlled = query !== undefined && onQueryChange;
   const value = controlled ? query : localQuery;
@@ -26,7 +29,10 @@ export function PortalHeader({ query, onQueryChange, extra }: PortalHeaderProps)
 
   function submitSearch(event: FormEvent) {
     event.preventDefault();
-    if (controlled) return;
+    if (controlled) {
+      onSearchSubmit?.(value.trim());
+      return;
+    }
     window.location.assign(value.trim() ? `/?q=${encodeURIComponent(value.trim())}` : "/");
   }
 
@@ -49,6 +55,10 @@ export function PortalHeader({ query, onQueryChange, extra }: PortalHeaderProps)
     }
   }
 
+  function closeAccountMenu() {
+    accountMenuRef.current?.removeAttribute("open");
+  }
+
   return (
     <>
       <header className="portal-header">
@@ -65,12 +75,26 @@ export function PortalHeader({ query, onQueryChange, extra }: PortalHeaderProps)
         </form>
         <div className="portal-header-actions">
           {extra}
-          <FavoriteFlowsPanel />
           <SavedFlowsPanel />
           {user ? (
-            <details className="portal-account">
+            <details className="portal-account" ref={accountMenuRef}>
               <summary>{displayName}</summary>
-              <button type="button" onClick={() => void handleLogout()}>ログアウト</button>
+              <div className="portal-account-menu">
+                <button type="button" onClick={() => {
+                  closeAccountMenu();
+                  setAccountSettingsOpen(true);
+                }}>
+                  <Settings size={17} aria-hidden="true" />
+                  アカウント設定
+                </button>
+                <button type="button" onClick={() => {
+                  closeAccountMenu();
+                  void handleLogout();
+                }}>
+                  <LogOut size={17} aria-hidden="true" />
+                  ログアウト
+                </button>
+              </div>
             </details>
           ) : (
             <button className="portal-login" type="button" disabled={authLoading} onClick={() => void handleLogin()}>ログイン</button>
@@ -78,6 +102,15 @@ export function PortalHeader({ query, onQueryChange, extra }: PortalHeaderProps)
         </div>
       </header>
       {notice && <div className="portal-toast" role="status">{notice}</div>}
+      {accountSettingsOpen && (
+        <AccountSettingsModal
+          onClose={() => setAccountSettingsOpen(false)}
+          onSaved={(name) => {
+            setNotice(`表示名を「${name}」に変更しました`);
+            window.setTimeout(() => setNotice(""), 3000);
+          }}
+        />
+      )}
     </>
   );
 }

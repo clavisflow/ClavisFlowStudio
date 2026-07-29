@@ -36,3 +36,5 @@ verify_jwt = false
 verify_jwt = false
 [functions.list-public-flows]
 verify_jwt = false
+[functions.flow-favorites]
+verify_jwt = false

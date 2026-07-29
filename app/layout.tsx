@@ -8,7 +8,7 @@ export const metadata: Metadata = {
   description: "Excel・CSV・JSON・Googleスプレッドシートの共有処理を選んで、面倒なデータ作業をすぐ実行。",
   openGraph: {
     title: "ClavisFlow Studio | データ処理ポータル",
-    description: "データを選ぶだけで、面倒な処理をすぐ実行。",
+    description: "データ処理が見つかる。なければ作れる。",
     locale: "ja_JP",
     type: "website",
     images: [{ url: "/og.png", width: 1536, height: 1024, alt: "ClavisFlow Studio データ処理ポータル" }],
@@ -16,7 +16,7 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
     title: "ClavisFlow Studio | データ処理ポータル",
-    description: "データを選ぶだけで、面倒な処理をすぐ実行。",
+    description: "データ処理が見つかる。なければ作れる。",
     images: ["/og.png"],
   },
 };

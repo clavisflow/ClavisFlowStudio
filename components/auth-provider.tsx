@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { User } from "@supabase/supabase-js";
 import { getSupabaseBrowserClient } from "@/lib/supabase-browser";
+import { userDisplayName } from "@/lib/user-display-name";
 
 type AuthContextValue = {
   user?: User;
@@ -10,6 +11,7 @@ type AuthContextValue = {
   loading: boolean;
   configured: boolean;
   signInWithGoogle: () => Promise<void>;
+  updateDisplayName: (displayName: string) => Promise<void>;
   signOut: () => Promise<void>;
 };
 
@@ -57,12 +59,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error) throw error;
   }
 
+  async function updateDisplayName(displayName: string) {
+    if (!client || !user) throw new Error("ログイン情報を確認できません。");
+    const normalizedName = displayName.trim();
+    if (!normalizedName) throw new Error("表示名を入力してください。");
+    const { data, error } = await client.auth.updateUser({
+      data: { display_name: normalizedName.slice(0, 80) },
+    });
+    if (error) throw error;
+    if (!data.user) throw new Error("表示名を保存できませんでした。");
+    setUser(data.user);
+  }
+
   const value: AuthContextValue = {
     user,
     displayName: user ? userDisplayName(user) : undefined,
     loading,
     configured: Boolean(client),
     signInWithGoogle,
+    updateDisplayName,
     signOut,
   };
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -76,10 +91,4 @@ export function useAuth() {
 
 export function authReturnToKey() {
   return RETURN_TO_KEY;
-}
-
-function userDisplayName(user: User) {
-  const metadata = user.user_metadata as Record<string, unknown>;
-  const name = [metadata.full_name, metadata.name].find((value) => typeof value === "string" && value.trim());
-  return typeof name === "string" ? name.trim() : user.email ?? "ログイン中";
 }
