@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, ArrowRight, Code2, Download, ExternalLink, EyeOff, FlaskConical, Globe2, Link2, LoaderCircle, LogIn, RefreshCw, Sparkles, Trash2, UploadCloud } from "lucide-react";
+import { AlertTriangle, ArrowRight, Code2, Copy, ExternalLink, EyeOff, FileJson, FileSpreadsheet, FileText, FlaskConical, Globe2, Link2, LoaderCircle, LogIn, RefreshCw, Sparkles, Trash2, UploadCloud } from "lucide-react";
 import { DataSourceCard, DataSourcePicker, GoogleSheetModal } from "@/components/data-source-ui";
 import { createManagedFlow, deleteManagedFlow, generateFlowSql, loadEditableFlow, loadPublicFlow, normalizeFlowVisibility, publicRunUrl, savedFlowFromPublicationError, setManagedFlowPublished, updateManagedFlow, uploadManagedFlowSamples } from "@/lib/flow-store";
 import type { CsvEncoding, FileAnalysis, FlowDraft, FlowInput, InputColumn, ManagedFlow, PublicFlow, QueryResult } from "@/lib/flow-types";
@@ -86,7 +86,7 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
   const [aiWarnings, setAiWarnings] = useState<string[]>([]);
   const [existing, setExisting] = useState<ManagedFlow>();
   const [publishedSnapshot, setPublishedSnapshot] = useState("");
-  const [loading, setLoading] = useState(mode === "edit");
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const [phase, setPhase] = useState("");
@@ -101,6 +101,7 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
   const [selectingAiSamples, setSelectingAiSamples] = useState(false);
   const [preview, setPreview] = useState<PreviewResult>();
   const [downloadUrl, setDownloadUrl] = useState<string>();
+  const [notice, setNotice] = useState("");
   const files = useRef<Record<string, File>>({});
   const sourceCollections = useRef<Record<string, EditorSourceCollection>>({});
   const client = useRef<ProcessingClient | null>(null);
@@ -348,13 +349,14 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
 
   useEffect(() => {
     if (mode !== "create") return;
+    let active = true;
     const params = new URL(window.location.href).searchParams;
     const copyId = params.get("copy");
     const sampleId = params.get("sample");
     if (copyId) {
-      setLoading(true);
       loadPublicFlow(copyId)
         .then((flow) => {
+          if (!active) return;
           const copiedInstruction = flow.instruction ?? flow.description;
           const copiedDraft: FlowDraft = applySqlRequiredColumns({
             name: `${flow.name}（コピー）`,
@@ -373,11 +375,14 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
           setHasGeneratedSql(true);
           setSourceSamples(editorSourceSamples(flow));
         })
-        .catch((loadError) => setError(loadError instanceof Error ? loadError.message : "コピー元の処理を読み込めませんでした。"))
-        .finally(() => setLoading(false));
+        .catch((loadError) => { if (active) setError(loadError instanceof Error ? loadError.message : "コピー元の処理を読み込めませんでした。"); })
+        .finally(() => { if (active) setLoading(false); });
     } else if (sampleId) {
-      void startSample(sampleId);
+      void startSample(sampleId).finally(() => { if (active) setLoading(false); });
+    } else {
+      setLoading(false);
     }
+    return () => { active = false; };
     // URLで選ばれたサンプルは初回表示時だけ読み込む。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
@@ -663,6 +668,40 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
     }
   }
 
+  async function savePreviewExcel() {
+    if (!preview) return;
+    const { default: writeExcelFile } = await import("write-excel-file/browser");
+    const rows = [
+      preview.columns,
+      ...preview.rows.map((row) => preview.columns.map((column) => row[column])),
+    ];
+    await writeExcelFile(rows).toFile(withExtension(draft.output.fileName || "result.csv", ".xlsx"));
+  }
+
+  function savePreviewJson() {
+    if (!preview) return;
+    downloadBlob(
+      new Blob([JSON.stringify(preview.rows, null, 2)], { type: "application/json" }),
+      withExtension(draft.output.fileName || "result.csv", ".json"),
+    );
+  }
+
+  async function copyPreviewResult() {
+    if (!preview) return;
+    const tsv = [
+      preview.columns.join("\t"),
+      ...preview.rows.map((row) => preview.columns.map((column) => String(row[column] ?? "").replaceAll("\t", " ")).join("\t")),
+    ].join("\n");
+    try {
+      await navigator.clipboard.writeText(tsv);
+      setNotice("クリップボードにコピーしました。ExcelやGoogleスプレッドシートへ貼り付けられます。");
+    } catch {
+      downloadBlob(new Blob([tsv], { type: "text/tab-separated-values" }), "処理結果.tsv");
+      setNotice("クリップボードへコピーできなかったため、結果をTSVファイルで保存しました。");
+    }
+    window.setTimeout(() => setNotice(""), 4200);
+  }
+
   async function saveAndPublish() {
     setError(undefined);
     const preparedDraft = prepareDraft(draft, fileStates, instruction);
@@ -768,7 +807,7 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
     }
   }
 
-  if (loading) return <main className="studio-shell"><div className="loading-row"><span className="spinner" />処理を読み込んでいます</div></main>;
+  if (loading) return <main className="studio-shell"><div className="loading-row"><span className="spinner" />{mode === "create" ? "作成画面を準備しています" : "処理を読み込んでいます"}</div></main>;
   const hasUnpublishedChanges = Boolean(existing && (existing.status !== "published" || publishedSnapshot !== editorSnapshot(draft, instruction)));
   const editorStatus = existing?.status !== "published"
     ? { className: "unpublished", label: "公開停止中" }
@@ -1025,7 +1064,14 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
                   <p className="result-preview-meta">{preview.totalRows.toLocaleString()}件を処理しました（{preview.elapsedMs.toLocaleString()}ms）</p>
                 </div>
                 <ResultTable result={preview} overflowNote="画面は先頭100件のみ表示しています。" />
-                {downloadUrl && <div className="result-preview-actions"><a className="button secondary" href={downloadUrl} download={draft.output.fileName || "result.csv"}><Download size={17} aria-hidden="true" />結果をダウンロード</a></div>}
+                {downloadUrl && (
+                  <div className="result-preview-actions" aria-label="結果を保存">
+                    <a className="button secondary" href={downloadUrl} download={withExtension(draft.output.fileName || "result.csv", ".csv")}><FileText size={17} aria-hidden="true" />CSVで保存</a>
+                    <button type="button" className="button secondary" onClick={() => void savePreviewExcel()}><FileSpreadsheet size={17} aria-hidden="true" />Excelで保存</button>
+                    <button type="button" className="button secondary" onClick={savePreviewJson}><FileJson size={17} aria-hidden="true" />JSONで保存</button>
+                    <button type="button" className="button secondary" onClick={() => void copyPreviewResult()}><Copy size={17} aria-hidden="true" />クリップボードにコピー</button>
+                  </div>
+                )}
               </section>
             )}
             <div className="wizard-actions between">
@@ -1203,6 +1249,7 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
           </div>
         </div>
       )}
+      {notice && <div className="portal-toast" role="status">{notice}</div>}
     </main>
   );
 }
@@ -1398,6 +1445,19 @@ function prepareDraft(draft: FlowDraft, fileStates: Record<string, EditorFileSta
 
 function safeFileBaseName(value: string) {
   return value.replace(/[<>:"/\\|?*\u0000-\u001f]/g, "_").replace(/[. ]+$/g, "").trim() || "処理";
+}
+
+function withExtension(fileName: string, extension: string) {
+  return fileName.replace(/\.[^.]+$/, "") + extension;
+}
+
+function downloadBlob(blob: Blob, fileName: string) {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = fileName;
+  anchor.click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function validatePreviewDraft(draft: FlowDraft): string | undefined {

@@ -426,7 +426,7 @@ button, select, label { -webkit-tap-highlight-color: transparent; }
 .result-preview-card { margin-top: 22px; padding: 22px; }
 .result-preview-card .result-toolbar { margin: -22px -22px 18px; padding: 14px 22px; border-bottom: 1px solid #eceaf5; background: #faf9ff; }
 .result-preview-card .result-preview-meta { margin: 0; text-align: right; }
-.result-preview-actions { margin-top: 18px; padding-top: 18px; display: flex; justify-content: flex-end; border-top: 1px solid #e5e3ee; }
+.result-preview-actions { margin-top: 18px; padding-top: 18px; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; border-top: 1px solid #e5e3ee; }
 .result-preview-actions .button { gap: 7px; }
 .input-reference { border-top: 1px solid var(--border); }
 .input-reference h3 { margin: 0; padding: 14px 0 10px; border-bottom: 1px solid var(--border); background: transparent; font-size: 16px; font-weight: 600; }
@@ -796,7 +796,7 @@ button:focus-visible, a:focus-visible, summary:focus-visible { outline: 3px soli
   .portal-drawer-close { margin-left: auto; width: 34px; height: 34px; display: grid; place-items: center; border: 0; border-radius: 8px; background: #f3f2fb; }
   .portal-drawer-scrim { position: fixed; z-index: 35; inset: 0; display: block; border: 0; background: rgb(20 20 36 / 38%); }
   .portal-main { margin-left: 0; }
-  .portal-mobile-menu { position: fixed; z-index: 34; left: 17px; top: 19px; width: 42px; height: 42px; display: grid; place-items: center; border: 1px solid #e1e2e9; border-radius: 10px; background: #fff; box-shadow: 0 4px 16px rgb(27 29 48 / 8%); }
+  .portal-mobile-menu { position: fixed; z-index: 34; left: 17px; top: 11px; width: 42px; height: 42px; display: grid; place-items: center; border: 1px solid #e1e2e9; border-radius: 10px; background: #fff; box-shadow: 0 4px 16px rgb(27 29 48 / 8%); }
   .portal-header { height: 64px; padding: 0 16px 0 70px; }
   .portal-shell-main > .studio-header,
   .portal-shell-main > .public-header { padding-left: 70px; }
@@ -806,8 +806,10 @@ button:focus-visible, a:focus-visible, summary:focus-visible { outline: 3px soli
 @media (max-width: 580px) {
   .portal-header { gap: 8px; }
   .portal-header-actions { gap: 10px; }
-  .portal-header .saved-flows-trigger { font-size: 14px; }
-  .portal-header .saved-flows-trigger svg { display: none; }
+  .portal-header .saved-flows-trigger { width: 40px; height: 40px; min-height: 40px; padding: 0; display: grid; place-items: center; border-radius: 8px; }
+  .portal-header .saved-flows-trigger:hover { background: #f7f6ff; }
+  .portal-header .saved-flows-trigger svg { width: 19px; height: 19px; }
+  .portal-header .saved-flows-label { display: none; }
   .portal-header .public-edit-link { display: none; }
   .portal-login { padding-inline: 11px; }
   .portal-search input { padding-left: 40px; font-size: 14px; }

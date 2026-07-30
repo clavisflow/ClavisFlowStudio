@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   CircleDashed,
   Columns3,
+  Copy,
   CopyPlus,
   Database,
   FileJson,
@@ -13,7 +14,6 @@ import {
   LoaderCircle,
   Play,
   RefreshCw,
-  Sheet,
   Trash2,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -653,21 +653,19 @@ export function FlowRunner() {
     downloadBlob(new Blob([JSON.stringify(result.rows, null, 2)], { type: "application/json" }), withExtension(flow.output.fileName, ".json"));
   }
 
-  async function outputToGoogleSheets() {
+  async function copyResultTable() {
     if (!result) return;
-    const target = window.open("https://sheets.new", "_blank", "noopener,noreferrer");
     const tsv = [
       result.columns.join("\t"),
       ...result.rows.map((row) => result.columns.map((column) => String(row[column] ?? "").replaceAll("\t", " ")).join("\t")),
     ].join("\n");
     try {
       await navigator.clipboard.writeText(tsv);
-      setNotice("結果をコピーしました。開いたスプレッドシートのA1セルへ貼り付けてください。");
+      setNotice("クリップボードにコピーしました。ExcelやGoogleスプレッドシートへ貼り付けられます。");
     } catch {
       downloadBlob(new Blob([tsv], { type: "text/tab-separated-values" }), "処理結果.tsv");
-      setNotice("貼り付け用ファイルを保存しました。Googleスプレッドシートで読み込んでください。");
+      setNotice("クリップボードへコピーできなかったため、結果をTSVファイルで保存しました。");
     }
-    if (!target) setNotice("結果をコピーしました。Googleスプレッドシートを開いて貼り付けてください。");
     window.setTimeout(() => setNotice(""), 4200);
   }
 
@@ -933,7 +931,7 @@ export function FlowRunner() {
               {downloadUrl && <a className="button secondary" href={downloadUrl} download={withExtension(flow.output.fileName, ".csv")}><FileText size={17} aria-hidden="true" />CSVで保存</a>}
               <button className="button secondary" onClick={() => void saveExcel()}><FileSpreadsheet size={17} aria-hidden="true" />Excelで保存</button>
               <button className="button secondary" onClick={saveJson}><FileJson size={17} aria-hidden="true" />JSONで保存</button>
-              <button className="button secondary" onClick={() => void outputToGoogleSheets()}><Sheet size={17} aria-hidden="true" />Googleスプレッドシートへ出力</button>
+              <button className="button secondary" onClick={() => void copyResultTable()}><Copy size={17} aria-hidden="true" />クリップボードにコピー</button>
             </div>
           </div>
         )}

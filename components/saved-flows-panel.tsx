@@ -34,8 +34,8 @@ export function SavedFlowsPanel() {
 
   return (
     <>
-      <button ref={triggerRef} type="button" className="saved-flows-trigger" aria-expanded={open} aria-controls="saved-flows-panel" onClick={openPanel}>
-        <LibraryBig size={17} aria-hidden="true" />作成済み処理
+      <button ref={triggerRef} type="button" className="saved-flows-trigger" aria-label="作成済み処理を開く" aria-expanded={open} aria-controls="saved-flows-panel" onClick={openPanel}>
+        <LibraryBig size={17} aria-hidden="true" /><span className="saved-flows-label">作成済み処理</span>
       </button>
       {open && typeof document !== "undefined" && createPortal(
         <div className="saved-flows-overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>
