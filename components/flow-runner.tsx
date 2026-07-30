@@ -14,13 +14,16 @@ import {
   Play,
   RefreshCw,
   Sheet,
+  Trash2,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useAuth } from "@/components/auth-provider";
 import { DataSourceCard, DataSourcePicker, GoogleSheetModal } from "@/components/data-source-ui";
+import { isAdminEmail } from "@/lib/admin-access";
 import { inferColumnMatches, type ColumnMatch } from "@/lib/column-matching";
-import { getBundledSampleFiles } from "@/lib/demo-flow";
+import { getBundledDemo, getBundledSampleFiles } from "@/lib/demo-flow";
 import type { CsvEncoding, FileAnalysis, FlowInput, PublicFlow, QueryResult } from "@/lib/flow-types";
-import { loadPublicFlow } from "@/lib/flow-store";
+import { deletePublicFlowAsAdmin, loadPublicFlow } from "@/lib/flow-store";
 import { ProcessingClient } from "@/lib/processing-client";
 import { ResultTable } from "@/components/result-table";
 import { recordSuccessfulRun } from "@/lib/portal-activity";
@@ -84,6 +87,7 @@ const typeLabels = {
 } as const;
 
 export function FlowRunner() {
+  const { user } = useAuth();
   const [flow, setFlow] = useState<PublicFlow>();
   const [inputStates, setInputStates] = useState<Record<string, InputState>>({});
   const [googleForms, setGoogleForms] = useState<Record<string, GoogleForm>>({});
@@ -99,6 +103,9 @@ export function FlowRunner() {
   const [executionStatus, setExecutionStatus] = useState<"idle" | "success" | "failure">("idle");
   const [downloadUrl, setDownloadUrl] = useState<string>();
   const [notice, setNotice] = useState("");
+  const [adminDeleteOpen, setAdminDeleteOpen] = useState(false);
+  const [adminDeleteBusy, setAdminDeleteBusy] = useState(false);
+  const [adminDeleteError, setAdminDeleteError] = useState("");
   const preparedFiles = useRef<Record<string, File>>({});
   const sourceCollections = useRef<Record<string, SourceCollection>>({});
   const client = useRef<ProcessingClient | null>(null);
@@ -664,6 +671,20 @@ export function FlowRunner() {
     window.setTimeout(() => setNotice(""), 4200);
   }
 
+  async function confirmAdminDelete() {
+    if (!flow) return;
+    setAdminDeleteBusy(true);
+    setAdminDeleteError("");
+    try {
+      await deletePublicFlowAsAdmin(flow.publicId);
+      window.location.assign("/");
+    } catch (deleteError) {
+      setAdminDeleteError(deleteError instanceof Error ? deleteError.message : "公開処理を削除できませんでした。");
+    } finally {
+      setAdminDeleteBusy(false);
+    }
+  }
+
   if (loading) {
     return <main className="tool-shell"><div className="loading-row"><span className="spinner" />処理を読み込んでいます</div></main>;
   }
@@ -673,6 +694,7 @@ export function FlowRunner() {
 
   const hasBundledSamples = Boolean(getBundledSampleFiles(flow.publicId)) ||
     Boolean(flow.samples?.length === flow.inputs.length && flow.inputs.every((input) => flow.samples?.some((sample) => sample.inputId === input.id)));
+  const canAdminDelete = isAdminEmail(user?.email) && !getBundledDemo(flow.publicId);
   const canRun = flow.inputs.every((input) => {
     const state = inputStates[input.id];
     return state?.status === "ready" &&
@@ -707,6 +729,16 @@ export function FlowRunner() {
             <a className="runner-copy-button" href={`/flows/new/?copy=${encodeURIComponent(flow.publicId)}`}>
               <CopyPlus size={17} aria-hidden="true" />コピーして処理を作る
             </a>
+            {canAdminDelete && (
+              <button
+                type="button"
+                className="runner-admin-delete-button"
+                disabled={adminDeleteBusy}
+                onClick={() => { setAdminDeleteError(""); setAdminDeleteOpen(true); }}
+              >
+                <Trash2 size={17} aria-hidden="true" />完全に削除
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -915,6 +947,30 @@ export function FlowRunner() {
         onClose={() => setGoogleModalOpen(false)}
         onSubmit={() => void addGoogleSheet()}
       />
+
+      {adminDeleteOpen && canAdminDelete && (
+        <div className="confirmation-overlay">
+          <div className="confirmation-dialog" role="dialog" aria-modal="true" aria-labelledby="admin-delete-title">
+            <h2 id="admin-delete-title">この公開処理を完全に削除しますか？</h2>
+            <p>公開ページ、処理定義、全バージョン、サンプルデータ、お気に入り記録、利用数を削除します。この操作は元に戻せません。</p>
+            {adminDeleteError && <div className="error-message" role="alert">{adminDeleteError}</div>}
+            <div className="confirmation-actions">
+              <button type="button" className="button plain" disabled={adminDeleteBusy} onClick={() => setAdminDeleteOpen(false)}>キャンセル</button>
+              <button
+                type="button"
+                className="button danger-button"
+                aria-busy={adminDeleteBusy}
+                disabled={adminDeleteBusy}
+                autoFocus
+                onClick={() => void confirmAdminDelete()}
+              >
+                {adminDeleteBusy && <LoaderCircle className="spin-icon" size={18} aria-hidden="true" />}
+                {adminDeleteBusy ? "削除しています..." : "完全に削除する"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {notice && <div className="portal-toast" role="status">{notice}</div>}
     </main>

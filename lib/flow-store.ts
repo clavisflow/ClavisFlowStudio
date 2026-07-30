@@ -73,6 +73,15 @@ export async function deleteManagedFlow(flow: ManagedFlow): Promise<void> {
   writeAll(readAll().filter((candidate) => candidate.publicId !== flow.publicId));
 }
 
+export async function deletePublicFlowAsAdmin(publicId: string): Promise<void> {
+  if (!supabaseUrl()) throw new Error("Supabase is not configured");
+  await edge("delete-flow", {
+    method: "POST",
+    body: JSON.stringify({ publicId }),
+  });
+  writeAll(readAll().filter((candidate) => candidate.publicId !== publicId));
+}
+
 export async function createManagedFlow(draft: FlowDraft, publish: boolean): Promise<ManagedFlow> {
   const now = new Date().toISOString();
   const visibility = normalizeFlowVisibility(draft.visibility);
@@ -209,6 +218,8 @@ export async function loadEditableFlow(publicId: string, token?: string): Promis
 }
 
 export async function loadPublicFlow(publicId: string): Promise<PublicFlow> {
+  const bundled = getBundledDemo(publicId);
+  if (bundled) return bundled;
   const baseUrl = supabaseUrl();
   if (baseUrl) {
     try {
@@ -216,15 +227,11 @@ export async function loadPublicFlow(publicId: string): Promise<PublicFlow> {
     } catch (error) {
       const local = localPublicFlow(publicId);
       if (local) return local;
-      const bundled = getBundledDemo(publicId);
-      if (bundled) return bundled;
       throw error;
     }
   }
   const local = localPublicFlow(publicId);
   if (local) return local;
-  const bundled = getBundledDemo(publicId);
-  if (bundled) return bundled;
   throw new Error("公開処理が見つかりません。");
 }
 

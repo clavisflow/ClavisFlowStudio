@@ -1,9 +1,8 @@
 import type { EffectiveEncoding, PublicFlow } from "./flow-types";
-import type { FlowCategory } from "./flow-categories";
 import { visibleSampleTemplates } from "./sample-templates.ts";
 
 export const DEMO_PUBLIC_ID = "invoice-payment-check";
-const OFFICIAL_UPDATED_AT = "2026-07-29T00:00:00+09:00";
+const OFFICIAL_UPDATED_AT = "2026-07-30T00:00:00+09:00";
 
 export const demoFlow: PublicFlow = {
   publicId: DEMO_PUBLIC_ID,
@@ -85,20 +84,11 @@ const demoSampleFiles: Record<string, BundledSampleFile> = {
 
 export const OFFICIAL_FLOW_PREFIX = "official-";
 
-const sampleHeaders: Record<string, string[]> = {
-  "/samples/invoices-cp932.csv": ["請求番号", "請求先", "請求金額"],
-  "/samples/payments-utf8-bom.csv": ["請求番号", "入金日", "入金額"],
-  "/samples/sales-shift-jis.csv": ["売上日", "商品コード", "商品名", "数量", "売上金額"],
-  "/samples/product-master-utf8.csv": ["商品コード", "商品名", "分類"],
-  "/samples/inventory-utf8-bom.csv": ["商品コード", "商品名", "現在庫", "入荷予定", "発注点"],
-  "/samples/customers-utf8-bom.csv": ["顧客ID", "氏名", "メールアドレス", "電話番号"],
-};
-
 const officialFlows = visibleSampleTemplates.map<PublicFlow>((sample) => ({
   publicId: `${OFFICIAL_FLOW_PREFIX}${sample.id}`,
   name: sample.flowName,
   description: sample.description,
-  categories: [officialCategory(sample.id)],
+  categories: [...sample.categories],
   instruction: sample.instruction,
   version: 1,
   updatedAt: OFFICIAL_UPDATED_AT,
@@ -108,27 +98,19 @@ const officialFlows = visibleSampleTemplates.map<PublicFlow>((sample) => ({
     tableName: `input_${index + 1}`,
     encoding: "auto",
     delimiter: ",",
-    requiredColumns: (sampleHeaders[file.url] ?? []).map((name) => ({ name, type: "VARCHAR" as const, required: true })),
+    requiredColumns: file.columns.map((column) => ({ ...column })),
   })),
   sql: sample.sql,
   output: sample.output,
   duckdbVersion: "1.32.0",
 }));
 
-function officialCategory(sampleId: string): FlowCategory {
-  if (sampleId === "sales-by-product") return "集計";
-  if (sampleId === "attach-product-master") return "結合";
-  if (sampleId === "low-inventory") return "抽出";
-  if (sampleId === "customer-data-check") return "整形";
-  return "チェック";
-}
-
 const officialSampleFiles = Object.fromEntries(
   visibleSampleTemplates.map((sample) => [
     `${OFFICIAL_FLOW_PREFIX}${sample.id}`,
     Object.fromEntries(sample.files.map((file, index) => [
       `input_${index + 1}`,
-      { name: file.name, url: file.url, encoding: file.encoding, headers: sampleHeaders[file.url] ?? [] },
+      { name: file.name, url: file.url, encoding: file.encoding, headers: file.columns.map((column) => column.name) },
     ])),
   ]),
 ) as Record<string, Record<string, BundledSampleFile>>;

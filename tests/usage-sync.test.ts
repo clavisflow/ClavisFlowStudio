@@ -29,7 +29,7 @@ test("処理成功時だけサーバー利用回数を記録する", async () =>
 
 test("おすすめは直近利用とお気に入りで計算し表示件数は累計を使う", async () => {
   const portal = await readFile(new URL("../components/processing-portal.tsx", import.meta.url), "utf8");
-  assert.match(portal, /\[\.\.\.latest, \.\.\.publicItems, \.\.\.officialItems\]/);
+  assert.match(portal, /\[\.\.\.publicItems, \.\.\.officialItems\]/);
   assert.match(portal, /Math\.log1p\(usageCounts\[item\.id\]\?\.recent \?\? 0\) \+ 4 \* Math\.log1p/);
   assert.match(portal, /\.slice\(0, 4\)/);
   assert.match(portal, /uses=\{usageCounts\[item\.id\]\?\.total \?\? 0\}/);

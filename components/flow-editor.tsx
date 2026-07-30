@@ -332,11 +332,7 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
         ...current,
         name: sample.flowName,
         description: sample.description,
-        categories: sample.id === "sales-by-product" ? ["集計"]
-          : sample.id === "attach-product-master" ? ["結合"]
-          : sample.id === "low-inventory" ? ["抽出"]
-          : sample.id === "customer-data-check" ? ["整形"]
-          : ["チェック"],
+        categories: [...sample.categories],
         inputs: current.inputs.map((input, index) => ({ ...input, encoding: sample.files[index]?.encoding ?? input.encoding })),
         sql: sample.sql,
         output: sample.output,

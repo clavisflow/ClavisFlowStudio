@@ -1,6 +1,8 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { HttpError } from "./http.ts";
 
+export const ADMIN_EMAIL = "clavisflow@gmail.com";
+
 export function adminClient() {
   const url = Deno.env.get("SUPABASE_URL");
   const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -41,6 +43,14 @@ export async function optionalUser(request: Request) {
 export async function requireUser(request: Request) {
   const user = await optionalUser(request);
   if (!user) throw new HttpError(401, "この操作にはログインが必要です。");
+  return user;
+}
+
+export async function requireAdmin(request: Request) {
+  const user = await requireUser(request);
+  if (!user.email_confirmed_at || user.email?.trim().toLowerCase() !== ADMIN_EMAIL) {
+    throw new HttpError(403, "管理者だけがこの操作を実行できます。");
+  }
   return user;
 }
 

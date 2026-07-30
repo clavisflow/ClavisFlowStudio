@@ -1,0 +1,6 @@
+ID,名称,メール,区分
+R-001,サンプルA,sample-a@example.com,A
+R-002,サンプルB,,A
+R-003,,sample-c@example.com,B
+R-004,サンプルD,,B
+R-005,サンプルE,sample-e@example.com,A

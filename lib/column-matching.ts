@@ -9,6 +9,18 @@ export type ColumnMatch = {
 };
 
 const aliases: Record<string, string[]> = {
+  照合キー: ["キー", "id", "コード", "番号", "請求番号", "注文番号", "伝票番号", "商品コード", "顧客id", "社員id", "店舗コード"],
+  基準金額: ["基準額", "予定金額", "請求金額", "受注金額", "注文金額", "予算", "referenceamount", "expectedamount"],
+  実績金額: ["実績額", "入金額", "支払額", "売上金額", "actualamount", "paymentamount", "paidamount"],
+  集計キー: ["グループキー", "分類コード", "商品コード", "顧客id", "社員id", "店舗コード", "部門コード", "categoryid", "groupid"],
+  項目コード: ["id", "コード", "番号", "商品コード", "顧客id", "社員id", "itemcode"],
+  項目名: ["名称", "名前", "商品名", "顧客名", "店舗名", "担当者名", "itemname"],
+  金額: ["売上金額", "請求金額", "入金額", "合計金額", "金額合計", "amount"],
+  現在値: ["現在庫", "実績値", "現在数", "現在人数", "currentvalue", "actualvalue"],
+  予定値: ["入荷予定", "予定数", "見込値", "追加予定", "plannedvalue", "expectedvalue"],
+  基準値: ["発注点", "目標値", "最低値", "必要数", "予算", "threshold", "targetvalue"],
+  ID: ["識別子", "番号", "コード", "顧客id", "商品id", "会員id", "社員id", "recordid"],
+  名称: ["名前", "氏名", "商品名", "顧客名", "会社名", "店舗名", "name"],
   売上日: ["日付", "販売日", "取引日", "salesdate", "orderdate"],
   売上金額: ["金額", "売上", "販売金額", "合計金額", "salesamount", "amount"],
   商品コード: ["商品cd", "品番", "sku", "productcode", "itemcode"],
@@ -25,6 +37,23 @@ const aliases: Record<string, string[]> = {
   現在庫: ["在庫", "在庫数", "stock", "currentstock"],
   入荷予定: ["入荷予定数", "入荷数", "incoming", "scheduledstock"],
   発注点: ["安全在庫", "reorderpoint", "minimumstock"],
+  更新日: ["更新日時", "登録日", "変更日", "modifieddate", "updatedat", "updateddate"],
+  比較値: ["値", "内容", "状態", "金額", "名称", "value", "status"],
+  変換対象値: ["変換値", "コード", "分類コード", "旧値", "sourcevalue"],
+  変換前: ["旧値", "元の値", "コード", "fromvalue", "sourcevalue"],
+  変換後: ["新値", "置換後", "名称", "tovalue", "targetvalue"],
+  日付: ["処理日", "取引日", "販売日", "登録日", "date"],
+  文字列: ["テキスト", "名称", "氏名", "備考", "文字", "text", "name"],
+  数値項目: ["数値", "金額", "数量", "価格", "number", "amount"],
+  日付項目: ["日付", "処理日", "登録日", "date"],
+  開始日: ["開始日時", "着手日", "契約開始日", "startdate"],
+  終了日: ["終了日時", "完了日", "契約終了日", "enddate"],
+  区分: ["分類", "カテゴリ", "種別", "タイプ", "category", "type"],
+  値: ["数値", "金額", "数量", "実績値", "value", "amount"],
+  対象キー: ["対象id", "顧客id", "商品コード", "契約番号", "予約番号", "targetid"],
+  グループキー: ["グループ", "分類", "部門コード", "店舗コード", "groupid", "groupkey"],
+  連番: ["番号", "通番", "順番", "シーケンス", "sequence", "serialnumber"],
+  値一覧: ["複数値", "タグ", "カテゴリ一覧", "分類一覧", "values", "tags"],
 };
 
 export function normalizeColumnName(value: string): string {

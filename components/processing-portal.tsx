@@ -48,30 +48,43 @@ const categoryColorClasses: Record<Category, string> = {
   抽出: "extract",
 };
 
-const officialMeta: Record<string, Pick<PortalItem, "categories" | "required">> = {
-  "invoice-payment": { categories: ["チェック"], required: ["請求番号", "請求金額", "入金額"] },
-  "sales-by-product": { categories: ["集計"], required: ["商品コード", "商品名", "数量", "売上金額"] },
-  "attach-product-master": { categories: ["結合"], required: ["商品コード"] },
-  "low-inventory": { categories: ["抽出"], required: ["現在庫", "入荷予定", "発注点"] },
-  "customer-data-check": { categories: ["整形"], required: ["顧客ID", "氏名", "連絡先"] },
+const officialMeta: Record<string, Pick<PortalItem, "required">> = {
+  "invoice-payment": { required: ["照合キー", "基準金額", "実績金額"] },
+  "sales-by-product": { required: ["集計キー", "項目名", "数量", "金額"] },
+  "attach-product-master": { required: ["照合キー"] },
+  "low-inventory": { required: ["現在値", "予定値", "基準値"] },
+  "customer-data-check": { required: ["ID", "名称", "必須項目"] },
+  "latest-record-by-key": { required: ["ID", "更新日"] },
+  "remove-duplicate-rows": { required: ["列構成は自由"] },
+  "compare-data-differences": { required: ["照合キー", "比較値"] },
+  "replace-values-from-map": { required: ["変換対象値", "変換前", "変換後"] },
+  "append-same-format-files": { required: ["同じ列構成"] },
+  "add-date-parts": { required: ["日付"] },
+  "normalize-text": { required: ["文字列"] },
+  "find-invalid-values": { required: ["ID", "数値項目", "日付項目"] },
+  "calculate-elapsed-days": { required: ["ID", "開始日", "終了日"] },
+  "find-missing-master-keys": { required: ["ID", "照合キー"] },
+  "wide-to-long": { required: ["ID", "横に並んだ値の列"] },
+  "long-to-wide": { required: ["ID", "区分", "値"] },
+  "previous-value-difference": { required: ["ID", "日付", "値"] },
+  "find-overlapping-periods": { required: ["ID", "対象キー", "開始日", "終了日"] },
+  "summarize-input-status": { required: ["列構成は自由"] },
+  "summarize-duplicate-keys": { required: ["照合キー"] },
+  "find-sequence-gaps": { required: ["グループキー", "連番", "日付"] },
+  "split-delimited-values": { required: ["ID", "値一覧"] },
+  "find-numeric-outliers": { required: ["ID", "値"] },
+  "add-subtotals-grand-total": { required: ["集計キー", "金額"] },
 };
 
 const officialItems: PortalItem[] = visibleSampleTemplates.map((sample) => ({
   id: `${OFFICIAL_FLOW_PREFIX}${sample.id}`,
   name: sample.flowName,
   description: sample.description,
+  categories: sample.categories,
   ...officialMeta[sample.id],
 }));
 
-const latest: PortalItem[] = [
-  { id: "multi-store", name: "複数店舗の売上データを統合", description: "店舗別データを結合し、統合した売上一覧を作成します。", categories: ["結合"], required: ["店舗名", "日付", "売上金額"] },
-  { id: "invoice-check", name: "請求データの入力漏れをチェック", description: "必須項目の空白や不正な値を検出して一覧にします。", categories: ["チェック"], required: ["請求番号", "請求金額"] },
-  { id: "json-products", name: "JSONの商品データを一覧化", description: "JSON形式の商品データを扱いやすい表形式に変換します。", categories: ["変換"], required: ["商品ID", "商品名", "価格"] },
-  { id: "conditional-extract", name: "指定条件でデータを抽出", description: "指定した条件に一致するデータだけを抽出します。", categories: ["抽出"], required: ["抽出対象列"] },
-];
-
 const officialProcessIds = new Set(officialItems.map((item) => item.id));
-const latestProcessIds = new Set(latest.map((item) => item.id));
 
 function formatUses(uses: number) {
   return new Intl.NumberFormat("ja-JP").format(uses);
@@ -122,7 +135,7 @@ export function ProcessingPortal() {
     categories: flow.categories,
     required: [...new Set(flow.inputs.flatMap((input) => input.requiredColumns.filter((column) => column.required).map((column) => column.name)))],
   })), [publishedFlows]);
-  const allProcesses = useMemo(() => [...latest, ...publicItems, ...officialItems], [publicItems]);
+  const allProcesses = useMemo(() => [...publicItems, ...officialItems], [publicItems]);
   const allProcessKeys = useMemo(
     () => allProcesses.map((item) => item.id),
     [allProcesses],
@@ -269,10 +282,7 @@ export function ProcessingPortal() {
             <div className="portal-card-grid">
               {recommendedItems.map((item) => {
                 const favorite = Boolean(activity.favorites[item.id]?.active);
-                const badges: Array<"公式" | "NEW"> = [];
-                if (officialProcessIds.has(item.id)) badges.push("公式");
-                if (latestProcessIds.has(item.id)) badges.push("NEW");
-                return <ProcessCard item={item} badges={badges} favorite={favorite} favorites={displayedFavoriteCount(item.id, favorite)} uses={usageCounts[item.id]?.total ?? 0} onToggle={() => toggleFavorite(item)} key={item.id} />;
+                return <ProcessCard item={item} official={officialProcessIds.has(item.id)} favorite={favorite} favorites={displayedFavoriteCount(item.id, favorite)} uses={usageCounts[item.id]?.total ?? 0} onToggle={() => toggleFavorite(item)} key={item.id} />;
               })}
             </div>
           </section>
@@ -292,11 +302,8 @@ export function ProcessingPortal() {
               <>
                 <div className="portal-card-grid portal-browse-grid">
                   {visibleProcesses.map((item) => {
-                    const badges: Array<"公式" | "NEW"> = [];
-                    if (officialProcessIds.has(item.id)) badges.push("公式");
-                    if (latestProcessIds.has(item.id)) badges.push("NEW");
                     const favorite = Boolean(activity.favorites[item.id]?.active);
-                    return <ProcessCard item={item} badges={badges} favorite={favorite} favorites={displayedFavoriteCount(item.id, favorite)} uses={usageCounts[item.id]?.total ?? 0} onToggle={() => toggleFavorite(item)} key={item.id} />;
+                    return <ProcessCard item={item} official={officialProcessIds.has(item.id)} favorite={favorite} favorites={displayedFavoriteCount(item.id, favorite)} uses={usageCounts[item.id]?.total ?? 0} onToggle={() => toggleFavorite(item)} key={item.id} />;
                   })}
                 </div>
                 {visibleProcessCount < filteredProcesses.length && (
@@ -330,12 +337,12 @@ function HeroVisual() {
   );
 }
 
-function ProcessCard({ item, badges, uses, favorites, favorite, onToggle }: { item: PortalItem; badges: Array<"公式" | "NEW">; uses: number; favorites: number; favorite: boolean; onToggle: () => void }) {
+function ProcessCard({ item, official, uses, favorites, favorite, onToggle }: { item: PortalItem; official: boolean; uses: number; favorites: number; favorite: boolean; onToggle: () => void }) {
   return (
     <article className="portal-process-card">
       <div className="portal-card-heading">
         <CategoryIcons categories={item.categories} />
-        {badges.length > 0 && <span className="portal-card-badges">{badges.map((badge) => <span className={badge === "公式" ? "official" : "new"} key={badge}>{badge}</span>)}</span>}
+        {official && <span className="portal-card-badges"><span className="official">公式</span></span>}
       </div>
       <h3><Link className="portal-card-link" href={`/run/?flow=${encodeURIComponent(item.id)}`}>{item.name}</Link></h3>
       <p className="portal-card-description">{item.description}</p>
