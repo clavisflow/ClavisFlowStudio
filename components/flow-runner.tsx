@@ -700,7 +700,6 @@ export function FlowRunner() {
   });
   const orderedInputs = orderedFlowInputs();
   const populatedInputs = orderedInputs.filter((input) => isPopulated(input.id));
-  const inputRowCount = flow.inputs.reduce((total, input) => total + (inputStates[input.id]?.analysis?.rowCount ?? 0), 0);
 
   return (
     <main className="tool-shell runner-shell">
@@ -917,16 +916,8 @@ export function FlowRunner() {
         {executionStatus === "failure" && <div className="runner-result-status failure"><AlertTriangle aria-hidden="true" /><div><strong>失敗</strong><p>{error ?? "処理を完了できませんでした。"}</p></div></div>}
         {executionStatus === "success" && result && (
           <div className="runner-result" aria-live="polite">
-            <div className="runner-result-status success"><CheckCircle2 aria-hidden="true" /><div><strong>成功</strong><p>処理が正常に完了しました。</p></div></div>
-            <dl className="runner-result-metrics">
-              <div><dt>入力行数</dt><dd>{inputRowCount.toLocaleString()}行</dd></div>
-              <div><dt>出力行数</dt><dd>{result.totalRows.toLocaleString()}行</dd></div>
-              <div><dt>処理時間</dt><dd>{result.elapsedMs.toLocaleString()}ms</dd></div>
-            </dl>
-            <div className="runner-result-preview">
-              <h3>結果プレビュー</h3>
-              <ResultTable result={result} overflowNote="画面は先頭100件のみ表示しています。保存ファイルには全件が含まれます。" />
-            </div>
+            <p className="runner-result-meta">出力 {result.totalRows.toLocaleString()}行・処理 {result.elapsedMs.toLocaleString()}ms</p>
+            <ResultTable result={result} overflowNote="画面は先頭100件のみ表示しています。保存ファイルには全件が含まれます。" />
             <div className="runner-output-actions" aria-label="結果を保存">
               {downloadUrl && <a className="button secondary" href={downloadUrl} download={withExtension(flow.output.fileName, ".csv")}><FileText size={17} aria-hidden="true" />CSVで保存</a>}
               <button className="button secondary" onClick={() => void saveExcel()}><FileSpreadsheet size={17} aria-hidden="true" />Excelで保存</button>
