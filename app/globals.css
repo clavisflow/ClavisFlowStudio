@@ -668,7 +668,7 @@ button:focus-visible, a:focus-visible, summary:focus-visible { outline: 3px soli
 }
 .portal-search {
   position: relative;
-  width: min(100%, 780px);
+  width: min(100%, 520px);
   height: 40px;
   display: flex;
   align-items: center;
@@ -1040,9 +1040,11 @@ button:focus-visible, a:focus-visible, summary:focus-visible { outline: 3px soli
 .portal-login { min-height: 32px; padding: 4px 0; color: #9a9fac !important; background: transparent !important; font-size: 14px; font-weight: 400; }
 .portal-login:hover { color: #6f7482 !important; text-decoration: underline; text-underline-offset: 3px; }
 .portal-account { position: relative; }
-.portal-account summary { max-width: 180px; padding: 6px 0; overflow: hidden; color: #777d8b; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; list-style: none; }
+.portal-account summary { max-width: 180px; padding: 6px 0; display: flex; align-items: center; gap: 6px; color: #777d8b; font-size: 14px; white-space: nowrap; cursor: pointer; list-style: none; }
 .portal-account summary::-webkit-details-marker { display: none; }
 .portal-account summary:hover { color: #565c69; }
+.portal-account summary > svg { flex: none; }
+.portal-account-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .portal-account-menu { position: absolute; z-index: 45; top: calc(100% + 7px); right: 0; min-width: 190px; padding: 6px; border: 1px solid #dedfe7; border-radius: 10px; background: #fff; box-shadow: 0 10px 28px rgb(31 34 50 / 14%); }
 .portal-account-menu button { width: 100%; min-height: 42px; padding: 9px 10px; display: flex; align-items: center; gap: 9px; border: 0; border-radius: 7px; color: #555b69; background: transparent; font-size: 14px; text-align: left; cursor: pointer; }
 .portal-account-menu button:hover { color: var(--primary); background: #f7f6ff; }

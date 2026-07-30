@@ -1,6 +1,6 @@
 "use client";
 
-import { LogOut, Search, Settings, X } from "lucide-react";
+import { LogOut, Search, Settings, UserRound, X } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { SavedFlowsPanel } from "@/components/saved-flows-panel";
 import { useAuth } from "@/components/auth-provider";
@@ -86,12 +86,12 @@ export function PortalHeader({ query, onQueryChange, onSearchSubmit, extra }: Po
       <header className="portal-header">
         <form className="portal-search" role="search" onSubmit={submitSearch}>
           <Search aria-hidden="true" />
-          <label className="sr-only" htmlFor="portal-global-search">処理を検索</label>
+          <label className="sr-only" htmlFor="portal-global-search">キーワードで検索</label>
           <input
             id="portal-global-search"
             value={value}
             onChange={(event) => updateQuery(event.target.value)}
-            placeholder="やりたいこと・列名で検索（例：売上集計、重複削除、商品コード）"
+            placeholder="キーワードで検索（例：請求、商品、重複、差分）"
           />
           {value && <button type="button" aria-label="検索語をクリア" onClick={() => updateQuery("")}><X size={17} /></button>}
         </form>
@@ -100,7 +100,10 @@ export function PortalHeader({ query, onQueryChange, onSearchSubmit, extra }: Po
           <SavedFlowsPanel />
           {user ? (
             <details className="portal-account" ref={accountMenuRef}>
-              <summary>{displayName}</summary>
+              <summary>
+                <UserRound size={17} aria-hidden="true" />
+                <span className="portal-account-name">{displayName}</span>
+              </summary>
               <div className="portal-account-menu">
                 <button type="button" onClick={() => {
                   closeAccountMenu();
