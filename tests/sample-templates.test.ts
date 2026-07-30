@@ -34,6 +34,11 @@ test("公式処理は外部公開APIを待たずに内蔵定義から読み込�
   assert.equal(flow.name, "キーごとに最新の1件を残す");
 });
 
+test("削除した旧請求入金デモを同梱処理として復元しない", () => {
+  assert.equal(getBundledDemo("invoice-payment-check"), undefined);
+  assert.equal(getBundledSampleFiles("invoice-payment-check"), undefined);
+});
+
 test("公式処理を内容に応じて複数カテゴリへ分類する", () => {
   assert.deepEqual(getSampleTemplate("invoice-payment")?.categories, ["結合", "チェック"]);
   assert.deepEqual(getSampleTemplate("sales-by-product")?.categories, ["集計"]);
