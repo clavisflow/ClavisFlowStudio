@@ -455,15 +455,12 @@ button:focus-visible, a:focus-visible, summary:focus-visible { outline: 3px soli
 .portal-required-fields { margin: 13px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; list-style: none; }
 .portal-required-fields li { min-height: 30px; padding: 4px 9px; display: inline-flex; align-items: center; border: 1px solid #dfe1e8; border-radius: 999px; color: #555d6d; background: #f7f8fa; font-size: 14px; line-height: 1.4; }
 .portal-required-fields li.more { color: #606778; border-style: dashed; background: #fff; font-weight: 700; }
-.portal-card-footer { margin-top: auto; padding-top: 13px; border-top: 1px solid #f0f0f4; }
-.portal-usage-stats { display: inline-flex; align-items: center; flex-wrap: nowrap; gap: 10px; color: #686f80; font-size: 14px; line-height: 1.45; }
-.portal-usage-stats > span { display: inline-flex; align-items: center; gap: 3px; white-space: nowrap; }
-.portal-favorite-stat { position: relative; z-index: 2; min-height: 32px; margin-left: auto; padding: 3px 7px; display: inline-flex; align-items: center; gap: 4px; flex: none; border: 0; border-radius: 8px; color: #747b8a; background: transparent; font-size: 14px; line-height: 1; white-space: nowrap; cursor: pointer; }
+.portal-card-footer { margin-top: auto; padding-top: 13px; display: flex; justify-content: flex-end; border-top: 1px solid #f0f0f4; }
+.portal-favorite-stat { position: relative; z-index: 2; width: 32px; height: 32px; padding: 0; display: grid; place-items: center; flex: none; border: 0; border-radius: 8px; color: #747b8a; background: transparent; cursor: pointer; }
 .portal-favorite-stat:hover { color: #6c5ef2; background: #f3f1ff; }
 .portal-favorite-stat svg { width: 16px; height: 16px; }
-.portal-favorite-stat.active { color: #6758ef; font-weight: 700; }
+.portal-favorite-stat.active { color: #6758ef; }
 .portal-favorite-stat.active svg { fill: currentColor; }
-.portal-card-footer .portal-usage-stats { width: 100%; justify-content: space-between; }
 .portal-section-title.compact { margin-bottom: 12px; }
 .portal-browse-toolbar { margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .portal-chips { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }

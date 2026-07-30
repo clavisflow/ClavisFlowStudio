@@ -86,10 +86,6 @@ const officialItems: PortalItem[] = visibleSampleTemplates.map((sample) => ({
 
 const officialProcessIds = new Set(officialItems.map((item) => item.id));
 
-function formatUses(uses: number) {
-  return new Intl.NumberFormat("ja-JP").format(uses);
-}
-
 export function ProcessingPortal() {
   const { user, loading: authLoading } = useAuth();
   const userId = user?.id;
@@ -191,10 +187,6 @@ export function ProcessingPortal() {
     }
   }
 
-  function displayedFavoriteCount(processKey: string, favorite: boolean) {
-    return (favoriteCounts[processKey] ?? 0) + (!userId && favorite ? 1 : 0);
-  }
-
   function chooseCategory(next: Category | "すべて") {
     setCategory(next);
     setFavoritesOnly(false);
@@ -282,7 +274,7 @@ export function ProcessingPortal() {
             <div className="portal-card-grid">
               {recommendedItems.map((item) => {
                 const favorite = Boolean(activity.favorites[item.id]?.active);
-                return <ProcessCard item={item} official={officialProcessIds.has(item.id)} favorite={favorite} favorites={displayedFavoriteCount(item.id, favorite)} uses={usageCounts[item.id]?.total ?? 0} onToggle={() => toggleFavorite(item)} key={item.id} />;
+                return <ProcessCard item={item} official={officialProcessIds.has(item.id)} favorite={favorite} onToggle={() => toggleFavorite(item)} key={item.id} />;
               })}
             </div>
           </section>
@@ -303,7 +295,7 @@ export function ProcessingPortal() {
                 <div className="portal-card-grid portal-browse-grid">
                   {visibleProcesses.map((item) => {
                     const favorite = Boolean(activity.favorites[item.id]?.active);
-                    return <ProcessCard item={item} official={officialProcessIds.has(item.id)} favorite={favorite} favorites={displayedFavoriteCount(item.id, favorite)} uses={usageCounts[item.id]?.total ?? 0} onToggle={() => toggleFavorite(item)} key={item.id} />;
+                    return <ProcessCard item={item} official={officialProcessIds.has(item.id)} favorite={favorite} onToggle={() => toggleFavorite(item)} key={item.id} />;
                   })}
                 </div>
                 {visibleProcessCount < filteredProcesses.length && (
@@ -337,7 +329,7 @@ function HeroVisual() {
   );
 }
 
-function ProcessCard({ item, official, uses, favorites, favorite, onToggle }: { item: PortalItem; official: boolean; uses: number; favorites: number; favorite: boolean; onToggle: () => void }) {
+function ProcessCard({ item, official, favorite, onToggle }: { item: PortalItem; official: boolean; favorite: boolean; onToggle: () => void }) {
   return (
     <article className="portal-process-card">
       <div className="portal-card-heading">
@@ -348,7 +340,7 @@ function ProcessCard({ item, official, uses, favorites, favorite, onToggle }: { 
       <p className="portal-card-description">{item.description}</p>
       <RequiredFieldTags items={item.required} />
       <div className="portal-card-footer">
-        <UsageStats uses={uses} favorites={favorites} favorite={favorite} name={item.name} onToggle={onToggle} />
+        <FavoriteButton favorite={favorite} name={item.name} onToggle={onToggle} />
       </div>
     </article>
   );
@@ -379,12 +371,9 @@ function RequiredFieldTags({ items }: { items: string[] }) {
   );
 }
 
-function UsageStats({ uses, favorites, favorite, name, onToggle, className = "" }: { uses: number; favorites: number; favorite: boolean; name: string; onToggle: () => void; className?: string }) {
+function FavoriteButton({ favorite, name, onToggle }: { favorite: boolean; name: string; onToggle: () => void }) {
   return (
-    <span className={`portal-usage-stats ${className}`.trim()}>
-      <span>利用 {formatUses(uses)} 回</span>
-      <button className={`portal-favorite-stat ${favorite ? "active" : ""}`} type="button" aria-label={`${name}をお気に入り${favorite ? "から削除" : "に追加"}、現在${formatUses(favorites)}件`} aria-pressed={favorite} onClick={onToggle}><Heart aria-hidden="true" />{formatUses(favorites)}</button>
-    </span>
+    <button className={`portal-favorite-stat ${favorite ? "active" : ""}`} type="button" aria-label={`${name}をお気に入り${favorite ? "から削除" : "に追加"}`} aria-pressed={favorite} onClick={onToggle}><Heart aria-hidden="true" /></button>
   );
 }
 
