@@ -8,7 +8,7 @@ import type { ManagedFlow } from "@/lib/flow-types";
 
 export function SavedFlowsPanel() {
   const [open, setOpen] = useState(false);
-  const [flows, setFlows] = useState<ManagedFlow[]>(() => listManagedFlows());
+  const [flows, setFlows] = useState<ManagedFlow[]>([]);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
 

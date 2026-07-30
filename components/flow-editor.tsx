@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ArrowRight, Code2, Download, ExternalLink, EyeOff, FlaskConical, Globe2, Link2, LogIn, RefreshCw, Sparkles, Trash2, UploadCloud } from "lucide-react";
+import { ArrowRight, Code2, Download, ExternalLink, EyeOff, FlaskConical, Globe2, Link2, LoaderCircle, LogIn, RefreshCw, Sparkles, Trash2, UploadCloud } from "lucide-react";
 import { DataSourceCard, DataSourcePicker, GoogleSheetModal } from "@/components/data-source-ui";
 import { createManagedFlow, deleteManagedFlow, generateFlowSql, loadEditableFlow, loadPublicFlow, normalizeFlowVisibility, publicRunUrl, savedFlowFromPublicationError, setManagedFlowPublished, updateManagedFlow, uploadManagedFlowSamples } from "@/lib/flow-store";
 import type { CsvEncoding, FileAnalysis, FlowDraft, FlowInput, InputColumn, ManagedFlow, PublicFlow, QueryResult } from "@/lib/flow-types";
@@ -716,6 +716,21 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
     setSampleFiles((current) => ({ ...current, [inputId]: file }));
   }
 
+  async function selectAiSampleFile(input: FlowInput) {
+    const aiSamples = draft.aiSamples;
+    if (!aiSamples || !isCurrentAiSample(draft)) {
+      setError("現在の処理定義に対応するAIサンプルがありません。処理を再生成してください。");
+      return;
+    }
+    try {
+      const rows = aiSampleTabularRows(aiSamples, input);
+      const file = await csvFileFromTabularRows(rows, `AIサンプル-${input.label}.csv`, "utf-8");
+      selectSampleFile(input.id, file);
+    } catch (sampleError) {
+      setError(sampleError instanceof Error ? sampleError.message : "AIサンプルを準備できませんでした。");
+    }
+  }
+
   function removeSampleFile(inputId: string) {
     setSampleFiles((current) => {
       const next = { ...current };
@@ -800,7 +815,7 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
               <div><dt>公開ID</dt><dd>{existing.publicId}</dd></div>
               <div><dt>バージョン</dt><dd>{existing.version}</dd></div>
               <div><dt>更新日</dt><dd>{formatUpdatedAt(existing.updatedAt)}</dd></div>
-              <div><dt>更新者</dt><dd>{existing.updatedBy ?? "追加予定"}</dd></div>
+              <div><dt>更新者</dt><dd>{existing.updatedBy ?? "---"}</dd></div>
             </dl>
           </div>
         )}
@@ -827,7 +842,8 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
                     <small>{hasCurrentAiSample ? "処理作成時に生成した非公開データです。公開ページには表示されません。" : "入力列またはSQLが変更されています。STEP 2で処理を再生成してください。"}</small>
                   </span>
                 </div>
-                <button type="button" className="button secondary" disabled={!hasCurrentAiSample || selectingAiSamples} onClick={() => void selectAiSamples()}>
+                <button type="button" className="button secondary" aria-busy={selectingAiSamples} disabled={!hasCurrentAiSample || selectingAiSamples} onClick={() => void selectAiSamples()}>
+                  {selectingAiSamples && <LoaderCircle className="spin-icon" size={18} aria-hidden="true" />}
                   {selectingAiSamples ? "読み込んでいます..." : "AIサンプルを読み込む"}
                 </button>
               </section>
@@ -838,7 +854,8 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
                   <FlaskConical size={20} aria-hidden="true" />
                   <span><strong>公開サンプルがあります</strong><small>公開ページでも利用できる登録済みサンプルです。</small></span>
                 </div>
-                <button type="button" className="button secondary" disabled={selectingSourceSamples} onClick={() => void selectExistingSamples()}>
+                <button type="button" className="button secondary" aria-busy={selectingSourceSamples} disabled={selectingSourceSamples} onClick={() => void selectExistingSamples()}>
+                  {selectingSourceSamples && <LoaderCircle className="spin-icon" size={18} aria-hidden="true" />}
                   {selectingSourceSamples ? "読み込んでいます..." : "公開サンプルを読み込む"}
                 </button>
               </section>
@@ -950,7 +967,7 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
                 <h2 id="processing-settings-title">処理内容</h2>
               </header>
               <div className="processing-card-body">
-                <label className="field instruction-field"><span>やりたいこと（処理）</span><textarea rows={6} maxLength={4000} placeholder="例：請求CSVと入金CSVを請求番号で照合して、未入金や金額の違いが分かるようにして。" value={instruction} onChange={(event) => { setInstruction(event.target.value); setAiWarnings([]); clearPreview(); }} /></label>
+                <label className="field instruction-field"><span>やりたいこと <small>（AIが処理を作成します）</small></span><textarea rows={6} maxLength={4000} placeholder="例：請求CSVと入金CSVを請求番号で照合して、未入金や金額の違いが分かるようにして。" value={instruction} onChange={(event) => { setInstruction(event.target.value); setAiWarnings([]); clearPreview(); }} /></label>
                 <div className="processing-source-list">
                 {draft.inputs.map((input) => (
                   <article className="processing-source-card" key={input.id}>
@@ -981,16 +998,22 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
                 </div>
                 {draft.sql && (
                   <details className="sql-adjustment">
-                    <summary><Code2 size={18} aria-hidden="true" />SQLを確認・修正</summary>
+                    <summary><Code2 size={18} aria-hidden="true" />AIが生成したSQLを確認・修正</summary>
                     <div className="sql-adjustment-body">
                       <label className="field"><span>DuckDB SQL</span><textarea className="sql-editor" rows={12} spellCheck={false} value={draft.sql} onChange={(event) => { setDraft((current) => applySqlRequiredColumns({ ...current, sql: event.target.value })); setGeneratedInstruction(instruction.trim()); clearPreview(); }} /></label>
                       <p className="field-help">結果が意図と違う場合だけSQLを修正し、再確認してください。</p>
-                      <button type="button" className="button secondary" disabled={previewing} onClick={() => void runPreview(draft.sql)}><RefreshCw size={17} aria-hidden="true" />修正したSQLで再確認</button>
+                      <button type="button" className="button secondary" aria-busy={previewing && !aiGenerating} disabled={previewing} onClick={() => void runPreview(draft.sql)}>
+                        {previewing && !aiGenerating ? <LoaderCircle className="spin-icon" size={18} aria-hidden="true" /> : <RefreshCw size={17} aria-hidden="true" />}
+                        {previewing && !aiGenerating ? "再確認しています..." : "修正したSQLで再確認"}
+                      </button>
                     </div>
                   </details>
                 )}
                 <div className="processing-card-actions">
-                  <button type="button" className="button primary" disabled={aiGenerating || previewing} onClick={() => void generateAndPreview()}><Sparkles size={18} aria-hidden="true" />{aiGenerating || previewing ? "結果を確認しています..." : preview ? "変更を反映して再確認" : "結果を確認"}</button>
+                  <button type="button" className="button primary" aria-busy={aiGenerating} disabled={aiGenerating || previewing} onClick={() => void generateAndPreview()}>
+                    {aiGenerating ? <LoaderCircle className="spin-icon" size={18} aria-hidden="true" /> : <Sparkles size={18} aria-hidden="true" />}
+                    {aiGenerating ? "結果を確認しています..." : preview ? "変更を反映して再確認" : "結果を確認"}
+                  </button>
                 </div>
               </div>
             </section>
@@ -1085,6 +1108,7 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
                       {draft.inputs.map((input) => {
                         const sample = sampleFiles[input.id];
                         const testFile = files.current[input.id];
+                        const testFileIsAiSample = testFile?.name.startsWith("AIサンプル-") ?? false;
                         return (
                           <article className="publish-sample-row" key={input.id}>
                             <div><strong>{input.label}</strong><span>CSV・Excel・JSON、5MB以下</span></div>
@@ -1095,9 +1119,8 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
                               </div>
                             ) : (
                               <div className="publish-sample-actions">
-                                {testFile && <button type="button" onClick={() => selectSampleFile(input.id, testFile)}>
-                                  {testFile.name.startsWith("AIサンプル-") ? "AIサンプルを公開用に使う" : "現在のテストデータを使う"}
-                                </button>}
+                                {hasCurrentAiSample && <button type="button" onClick={() => void selectAiSampleFile(input)}><Sparkles size={17} aria-hidden="true" />AIサンプルを公開用に使う</button>}
+                                {testFile && !testFileIsAiSample && <button type="button" onClick={() => selectSampleFile(input.id, testFile)}>現在のテストデータを使う</button>}
                                 <label><UploadCloud size={17} aria-hidden="true" /><span>ファイルを選択</span><input type="file" accept=".csv,.xlsx,.json,text/csv,application/json,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={(event) => { const file = event.target.files?.[0]; if (file) selectSampleFile(input.id, file); }} /></label>
                               </div>
                             )}
@@ -1119,7 +1142,7 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
                 <a className="button secondary public-confirm-link" href={publicRunUrl(publishedResult.publicId)} target="_blank" rel="noreferrer">公開ページを確認<ExternalLink size={17} aria-hidden="true" /></a>
               </div>
             )}
-            <div className="wizard-actions between"><button type="button" className="button plain" onClick={() => setActiveStep(2)}>戻る</button><button type="button" className="button primary" disabled={saving || !sampleSetComplete || Boolean(existing && !hasUnpublishedChanges && sampleCount === 0)} onClick={() => void saveAndPublish()}><Link2 size={18} aria-hidden="true" />{saving ? "公開しています..." : existing ? "変更を公開" : "公開URLを発行"}</button></div>
+            <div className="wizard-actions between"><button type="button" className="button plain" disabled={saving} onClick={() => setActiveStep(2)}>戻る</button><button type="button" className="button primary" aria-busy={saving} disabled={saving || !sampleSetComplete || Boolean(existing && !hasUnpublishedChanges && sampleCount === 0)} onClick={() => void saveAndPublish()}>{saving ? <LoaderCircle className="spin-icon" size={18} aria-hidden="true" /> : <Link2 size={18} aria-hidden="true" />}{saving ? "公開しています..." : existing ? "変更を公開" : "公開URLを発行"}</button></div>
           </div>
         )}
       </section>
@@ -1159,10 +1182,12 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
               <button
                 type="button"
                 className={`button ${managementConfirmation === "delete" ? "danger-button" : "primary"}`}
+                aria-busy={managementBusy}
                 disabled={managementBusy}
                 autoFocus
                 onClick={() => void confirmManagementAction()}
               >
+                {managementBusy && <LoaderCircle className="spin-icon" size={18} aria-hidden="true" />}
                 {managementBusy
                   ? managementConfirmation === "unpublish" ? "停止しています..." : "削除しています..."
                   : managementConfirmation === "unpublish" ? "公開を停止する" : "完全に削除する"}

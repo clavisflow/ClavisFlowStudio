@@ -17,6 +17,7 @@ const externalReaders = new Set([
 
 interface Tokens {
   words: string[];
+  functionCalls: Set<number>;
   statements: number;
   balanced: boolean;
   lexicalError?: string;
@@ -31,9 +32,9 @@ export function inspectSqlStructure(sql: string): SqlSafetyResult {
   if (tokens.statements !== 1) errors.push("単一のSQL文だけを指定してください。");
   const first = tokens.words[0];
   if (first !== "SELECT" && first !== "WITH") errors.push("SELECTまたはWITHで始まる読取専用SQLだけを指定できます。");
-  const denied = tokens.words.find((word) => forbidden.has(word));
+  const denied = tokens.words.find((word, index) => forbidden.has(word) && !(word === "REPLACE" && tokens.functionCalls.has(index)));
   if (denied) errors.push(`禁止されたSQL要素が含まれています: ${denied}`);
-  const external = tokens.words.find((word) => externalReaders.has(word));
+  const external = tokens.words.find((word, index) => externalReaders.has(word) && tokens.functionCalls.has(index));
   if (external) errors.push(`外部ファイル・URLを参照する関数は使用できません: ${external}`);
   return { safe: errors.length === 0, errors };
 }
@@ -45,11 +46,14 @@ function tokenize(sql: string): Tokens {
   let statements = 0;
   let hasContent = false;
   let statementEnded = false;
+  const functionCalls = new Set<number>();
+  let lastSignificantWord: number | undefined;
   let state: "normal" | "single" | "double" | "line-comment" | "block-comment" = "normal";
 
   const flush = () => {
     if (word) {
       words.push(word.toUpperCase());
+      lastSignificantWord = words.length - 1;
       word = "";
       hasContent = true;
       if (statementEnded) statements += 1;
@@ -80,26 +84,32 @@ function tokenize(sql: string): Tokens {
     }
     if (char === "-" && next === "-") { flush(); state = "line-comment"; i += 1; continue; }
     if (char === "/" && next === "*") { flush(); state = "block-comment"; i += 1; continue; }
-    if (char === "'") { flush(); state = "single"; hasContent = true; continue; }
-    if (char === '"') { flush(); state = "double"; hasContent = true; continue; }
+    if (char === "'") { flush(); state = "single"; hasContent = true; lastSignificantWord = undefined; continue; }
+    if (char === '"') { flush(); state = "double"; hasContent = true; lastSignificantWord = undefined; continue; }
     if (/[A-Za-z_]/.test(char)) { word += char; continue; }
     if (/[0-9]/.test(char) && word) { word += char; continue; }
     flush();
-    if (char === "(") depth += 1;
-    if (char === ")") depth -= 1;
-    if (depth < 0) return { words, statements, balanced: false };
+    if (char === "(") {
+      if (lastSignificantWord !== undefined) functionCalls.add(lastSignificantWord);
+      depth += 1;
+      lastSignificantWord = undefined;
+    }
+    if (char === ")") { depth -= 1; lastSignificantWord = undefined; }
+    if (depth < 0) return { words, functionCalls, statements, balanced: false };
     if (char === ";") {
       if (hasContent) { statements += 1; hasContent = false; }
       statementEnded = false;
+      lastSignificantWord = undefined;
     } else if (!/\s/.test(char)) {
       if (statements > 0) statementEnded = true;
       hasContent = true;
+      if (char !== "(") lastSignificantWord = undefined;
     }
   }
   flush();
   if (state === "single" || state === "double" || state === "block-comment") {
-    return { words, statements, balanced: depth === 0, lexicalError: "文字列・識別子またはコメントが閉じられていません。" };
+    return { words, functionCalls, statements, balanced: depth === 0, lexicalError: "文字列・識別子またはコメントが閉じられていません。" };
   }
   if (hasContent) statements += 1;
-  return { words, statements, balanced: depth === 0 };
+  return { words, functionCalls, statements, balanced: depth === 0 };
 }

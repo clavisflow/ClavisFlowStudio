@@ -1,7 +1,7 @@
 "use client";
 
 import { LogOut, Search, Settings, X } from "lucide-react";
-import { useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { SavedFlowsPanel } from "@/components/saved-flows-panel";
 import { useAuth } from "@/components/auth-provider";
 import { AccountSettingsModal } from "@/components/account-settings-modal";
@@ -21,6 +21,28 @@ export function PortalHeader({ query, onQueryChange, onSearchSubmit, extra }: Po
   const { user, displayName, loading: authLoading, configured: authConfigured, signInWithGoogle, signOut } = useAuth();
   const controlled = query !== undefined && onQueryChange;
   const value = controlled ? query : localQuery;
+
+  useEffect(() => {
+    function handlePointerDown(event: PointerEvent) {
+      const menu = accountMenuRef.current;
+      if (!menu?.open || !(event.target instanceof Node) || menu.contains(event.target)) return;
+      menu.removeAttribute("open");
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      const menu = accountMenuRef.current;
+      if (event.key !== "Escape" || !menu?.open) return;
+      menu.removeAttribute("open");
+      menu.querySelector<HTMLElement>("summary")?.focus();
+    }
+
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, []);
 
   function updateQuery(next: string) {
     if (controlled) onQueryChange(next);

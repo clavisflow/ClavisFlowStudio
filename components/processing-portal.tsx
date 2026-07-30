@@ -4,6 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import {
   ArrowRight,
+  BadgeCheck,
   Heart,
   Search,
   Sparkles,
@@ -19,6 +20,7 @@ import { flowCategoryLabels } from "@/lib/flow-categories";
 import { loadFavoriteCounts, syncPortalFavorites, type FavoriteCounts } from "@/lib/favorite-store";
 import { loadPublicFlowCatalog } from "@/lib/flow-store";
 import type { PublicFlowSummary } from "@/lib/flow-types";
+import { loadFlowUsageCounts, type FlowUsageCounts } from "@/lib/usage-store";
 import {
   getPortalActivityServerSnapshot,
   getPortalActivitySnapshot,
@@ -35,7 +37,6 @@ type PortalItem = {
   description: string;
   categories: Category[];
   required: string[];
-  uses: number;
 };
 
 const categoryColorClasses: Record<Category, string> = {
@@ -47,12 +48,12 @@ const categoryColorClasses: Record<Category, string> = {
   抽出: "extract",
 };
 
-const officialMeta: Record<string, Pick<PortalItem, "categories" | "required" | "uses">> = {
-  "invoice-payment": { categories: ["チェック"], required: ["請求番号", "請求金額", "入金額"], uses: 1240 },
-  "sales-by-product": { categories: ["集計"], required: ["商品コード", "商品名", "数量", "売上金額"], uses: 980 },
-  "attach-product-master": { categories: ["結合"], required: ["商品コード"], uses: 860 },
-  "low-inventory": { categories: ["抽出"], required: ["現在庫", "入荷予定", "発注点"], uses: 720 },
-  "customer-data-check": { categories: ["整形"], required: ["顧客ID", "氏名", "連絡先"], uses: 640 },
+const officialMeta: Record<string, Pick<PortalItem, "categories" | "required">> = {
+  "invoice-payment": { categories: ["チェック"], required: ["請求番号", "請求金額", "入金額"] },
+  "sales-by-product": { categories: ["集計"], required: ["商品コード", "商品名", "数量", "売上金額"] },
+  "attach-product-master": { categories: ["結合"], required: ["商品コード"] },
+  "low-inventory": { categories: ["抽出"], required: ["現在庫", "入荷予定", "発注点"] },
+  "customer-data-check": { categories: ["整形"], required: ["顧客ID", "氏名", "連絡先"] },
 };
 
 const officialItems: PortalItem[] = visibleSampleTemplates.map((sample) => ({
@@ -62,13 +63,11 @@ const officialItems: PortalItem[] = visibleSampleTemplates.map((sample) => ({
   ...officialMeta[sample.id],
 }));
 
-const recommended = officialItems.slice(0, 4);
-
 const latest: PortalItem[] = [
-  { id: "multi-store", name: "複数店舗の売上データを統合", description: "店舗別データを結合し、統合した売上一覧を作成します。", categories: ["結合"], required: ["店舗名", "日付", "売上金額"], uses: 42 },
-  { id: "invoice-check", name: "請求データの入力漏れをチェック", description: "必須項目の空白や不正な値を検出して一覧にします。", categories: ["チェック"], required: ["請求番号", "請求金額"], uses: 35 },
-  { id: "json-products", name: "JSONの商品データを一覧化", description: "JSON形式の商品データを扱いやすい表形式に変換します。", categories: ["変換"], required: ["商品ID", "商品名", "価格"], uses: 38 },
-  { id: "conditional-extract", name: "指定条件でデータを抽出", description: "指定した条件に一致するデータだけを抽出します。", categories: ["抽出"], required: ["抽出対象列"], uses: 28 },
+  { id: "multi-store", name: "複数店舗の売上データを統合", description: "店舗別データを結合し、統合した売上一覧を作成します。", categories: ["結合"], required: ["店舗名", "日付", "売上金額"] },
+  { id: "invoice-check", name: "請求データの入力漏れをチェック", description: "必須項目の空白や不正な値を検出して一覧にします。", categories: ["チェック"], required: ["請求番号", "請求金額"] },
+  { id: "json-products", name: "JSONの商品データを一覧化", description: "JSON形式の商品データを扱いやすい表形式に変換します。", categories: ["変換"], required: ["商品ID", "商品名", "価格"] },
+  { id: "conditional-extract", name: "指定条件でデータを抽出", description: "指定した条件に一致するデータだけを抽出します。", categories: ["抽出"], required: ["抽出対象列"] },
 ];
 
 const officialProcessIds = new Set(officialItems.map((item) => item.id));
@@ -84,10 +83,12 @@ export function ProcessingPortal() {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<Category | "すべて">("すべて");
   const [favoritesOnly, setFavoritesOnly] = useState(false);
+  const [officialOnly, setOfficialOnly] = useState(false);
   const [visibleProcessCount, setVisibleProcessCount] = useState(INITIAL_PROCESS_COUNT);
   const [notice, setNotice] = useState("");
   const [publishedFlows, setPublishedFlows] = useState<PublicFlowSummary[]>([]);
   const [favoriteCounts, setFavoriteCounts] = useState<FavoriteCounts>({});
+  const [usageCounts, setUsageCounts] = useState<FlowUsageCounts>({});
   const favoriteSyncRequest = useRef(0);
   const activity = useSyncExternalStore(subscribePortalActivity, getPortalActivitySnapshot, getPortalActivityServerSnapshot);
   const favoriteCount = Object.values(activity.favorites).filter((favorite) => favorite.active).length;
@@ -105,6 +106,7 @@ export function ProcessingPortal() {
         requestAnimationFrame(() => document.querySelector("#discover")?.scrollIntoView({ behavior: "smooth", block: "start" }));
       }
       if (parameters.get("favorites") === "1") setFavoritesOnly(true);
+      if (parameters.get("official") === "1") setOfficialOnly(true);
     });
     return () => window.cancelAnimationFrame(frame);
   }, []);
@@ -119,9 +121,8 @@ export function ProcessingPortal() {
     description: flow.description,
     categories: flow.categories,
     required: [...new Set(flow.inputs.flatMap((input) => input.requiredColumns.filter((column) => column.required).map((column) => column.name)))],
-    uses: 0,
   })), [publishedFlows]);
-  const allProcesses = useMemo(() => [...publicItems, ...officialItems, ...latest], [publicItems]);
+  const allProcesses = useMemo(() => [...latest, ...publicItems, ...officialItems], [publicItems]);
   const allProcessKeys = useMemo(
     () => allProcesses.map((item) => item.id),
     [allProcesses],
@@ -139,6 +140,20 @@ export function ProcessingPortal() {
     return () => { active = false; };
   }, [allProcessKeys, authLoading, favoriteRevision, userId]);
 
+  useEffect(() => {
+    let active = true;
+    loadFlowUsageCounts(allProcessKeys).then((counts) => {
+      if (active) setUsageCounts(counts);
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, [allProcessKeys]);
+
+  const recommendedItems = useMemo(() => allProcesses.map((item, index) => ({
+    item,
+    index,
+    score: Math.log1p(usageCounts[item.id]?.recent ?? 0) + 4 * Math.log1p(favoriteCounts[item.id] ?? 0),
+  })).sort((left, right) => right.score - left.score || (usageCounts[right.item.id]?.total ?? 0) - (usageCounts[left.item.id]?.total ?? 0) || left.index - right.index).slice(0, 4).map(({ item }) => item), [allProcesses, favoriteCounts, usageCounts]);
+
   const normalizedQuery = query.trim().toLocaleLowerCase("ja");
   const filteredProcesses = useMemo(
     () =>
@@ -146,9 +161,10 @@ export function ProcessingPortal() {
         const text = [item.name, item.description, ...item.categories.map((value) => flowCategoryLabels[value]), ...item.required].join(" ").toLocaleLowerCase("ja");
         return (!normalizedQuery || text.includes(normalizedQuery)) &&
           (category === "すべて" || item.categories.includes(category)) &&
-          (!favoritesOnly || activity.favorites[item.id]?.active);
+          (!favoritesOnly || activity.favorites[item.id]?.active) &&
+          (!officialOnly || officialProcessIds.has(item.id));
       }),
-    [activity.favorites, allProcesses, category, favoritesOnly, normalizedQuery],
+    [activity.favorites, allProcesses, category, favoritesOnly, normalizedQuery, officialOnly],
   );
   const visibleProcesses = filteredProcesses.slice(0, visibleProcessCount);
 
@@ -168,6 +184,8 @@ export function ProcessingPortal() {
 
   function chooseCategory(next: Category | "すべて") {
     setCategory(next);
+    setFavoritesOnly(false);
+    setOfficialOnly(false);
     setVisibleProcessCount(INITIAL_PROCESS_COUNT);
     requestAnimationFrame(() => document.querySelector("#discover")?.scrollIntoView({ behavior: "smooth", block: "start" }));
   }
@@ -176,6 +194,16 @@ export function ProcessingPortal() {
     setQuery("");
     setCategory("すべて");
     setFavoritesOnly(true);
+    setOfficialOnly(false);
+    setVisibleProcessCount(INITIAL_PROCESS_COUNT);
+    requestAnimationFrame(() => document.querySelector("#discover")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  }
+
+  function showOfficial() {
+    setQuery("");
+    setCategory("すべて");
+    setFavoritesOnly(false);
+    setOfficialOnly(true);
     setVisibleProcessCount(INITIAL_PROCESS_COUNT);
     requestAnimationFrame(() => document.querySelector("#discover")?.scrollIntoView({ behavior: "smooth", block: "start" }));
   }
@@ -187,6 +215,7 @@ export function ProcessingPortal() {
     if (next.trim()) {
       setCategory("すべて");
       setFavoritesOnly(false);
+      setOfficialOnly(false);
       if (startsSearch) requestAnimationFrame(() => document.querySelector("#discover")?.scrollIntoView({ behavior: "smooth", block: "start" }));
     }
   }
@@ -194,6 +223,7 @@ export function ProcessingPortal() {
   function showSearchResults() {
     setCategory("すべて");
     setFavoritesOnly(false);
+    setOfficialOnly(false);
     setVisibleProcessCount(INITIAL_PROCESS_COUNT);
     requestAnimationFrame(() => document.querySelector("#discover")?.scrollIntoView({ behavior: "smooth", block: "start" }));
   }
@@ -207,12 +237,13 @@ export function ProcessingPortal() {
     setQuery("");
     setCategory("すべて");
     setFavoritesOnly(false);
+    setOfficialOnly(false);
     setVisibleProcessCount(INITIAL_PROCESS_COUNT);
   }
 
   return (
     <div className="portal portal-app-shell">
-      <PortalSidebar onCategory={chooseCategory} onAllProcesses={resetFilters} onFavorites={showFavorites} onGuide={() => showNotice("使い方ガイドは準備中です")} />
+      <PortalSidebar onCategory={chooseCategory} onAllProcesses={resetFilters} onFavorites={showFavorites} onOfficial={showOfficial} onGuide={() => showNotice("使い方ガイドは準備中です")} />
 
       <main className="portal-main portal-shell-main" id="top">
         <PortalHeader query={query} onQueryChange={changeQuery} onSearchSubmit={showSearchResults} />
@@ -236,9 +267,12 @@ export function ProcessingPortal() {
               <div><p>RECOMMENDED</p><h2 id="recommended-title">おすすめの処理</h2></div>
             </div>
             <div className="portal-card-grid">
-              {recommended.map((item) => {
+              {recommendedItems.map((item) => {
                 const favorite = Boolean(activity.favorites[item.id]?.active);
-                return <ProcessCard item={item} badges={["公式"]} favorite={favorite} favorites={displayedFavoriteCount(item.id, favorite)} uses={item.uses + (activity.runCounts[item.id] ?? 0)} onToggle={() => toggleFavorite(item)} key={item.id} />;
+                const badges: Array<"公式" | "NEW"> = [];
+                if (officialProcessIds.has(item.id)) badges.push("公式");
+                if (latestProcessIds.has(item.id)) badges.push("NEW");
+                return <ProcessCard item={item} badges={badges} favorite={favorite} favorites={displayedFavoriteCount(item.id, favorite)} uses={usageCounts[item.id]?.total ?? 0} onToggle={() => toggleFavorite(item)} key={item.id} />;
               })}
             </div>
           </section>
@@ -247,9 +281,10 @@ export function ProcessingPortal() {
             <div className="portal-section-title compact"><div><p>DISCOVER</p><h2 id="discover-title">処理を探す</h2></div></div>
             <div className="portal-browse-toolbar">
               <div className="portal-chips" aria-label="目的で絞り込む">
-                <button className={category === "すべて" && !favoritesOnly ? "active" : ""} aria-pressed={category === "すべて" && !favoritesOnly} onClick={resetFilters}>すべて</button>
-                <button className={`portal-favorites-chip ${favoritesOnly ? "active" : ""}`} aria-pressed={favoritesOnly} onClick={() => { setFavoritesOnly((current) => !current); setCategory("すべて"); setVisibleProcessCount(INITIAL_PROCESS_COUNT); }}><Heart />お気に入り {favoriteCount}</button>
-                {categories.map((item) => <button className={category === item && !favoritesOnly ? "active" : ""} aria-pressed={category === item && !favoritesOnly} key={item} onClick={() => { setFavoritesOnly(false); chooseCategory(item); }}>{flowCategoryLabels[item]}</button>)}
+                <button className={category === "すべて" && !favoritesOnly && !officialOnly ? "active" : ""} aria-pressed={category === "すべて" && !favoritesOnly && !officialOnly} onClick={resetFilters}>すべて</button>
+                <button className={`portal-favorites-chip ${favoritesOnly ? "active" : ""}`} aria-pressed={favoritesOnly} onClick={() => { setFavoritesOnly((current) => !current); setOfficialOnly(false); setCategory("すべて"); setVisibleProcessCount(INITIAL_PROCESS_COUNT); }}><Heart />お気に入り {favoriteCount}</button>
+                <button className={`portal-officials-chip ${officialOnly ? "active" : ""}`} aria-pressed={officialOnly} onClick={() => { setOfficialOnly((current) => !current); setFavoritesOnly(false); setCategory("すべて"); setVisibleProcessCount(INITIAL_PROCESS_COUNT); }}><BadgeCheck />公式</button>
+                {categories.map((item) => <button className={category === item && !favoritesOnly && !officialOnly ? "active" : ""} aria-pressed={category === item && !favoritesOnly && !officialOnly} key={item} onClick={() => chooseCategory(item)}>{flowCategoryLabels[item]}</button>)}
               </div>
               <span className="portal-results-summary" aria-live="polite">{filteredProcesses.length}件</span>
             </div>
@@ -261,7 +296,7 @@ export function ProcessingPortal() {
                     if (officialProcessIds.has(item.id)) badges.push("公式");
                     if (latestProcessIds.has(item.id)) badges.push("NEW");
                     const favorite = Boolean(activity.favorites[item.id]?.active);
-                    return <ProcessCard item={item} badges={badges} favorite={favorite} favorites={displayedFavoriteCount(item.id, favorite)} uses={item.uses + (activity.runCounts[item.id] ?? 0)} onToggle={() => toggleFavorite(item)} key={item.id} />;
+                    return <ProcessCard item={item} badges={badges} favorite={favorite} favorites={displayedFavoriteCount(item.id, favorite)} uses={usageCounts[item.id]?.total ?? 0} onToggle={() => toggleFavorite(item)} key={item.id} />;
                   })}
                 </div>
                 {visibleProcessCount < filteredProcesses.length && (

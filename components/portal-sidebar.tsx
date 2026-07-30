@@ -3,9 +3,11 @@
 import Link from "next/link";
 import Image from "next/image";
 import {
+  BadgeCheck,
   BarChart3,
   Box,
   CircleHelp,
+  ClipboardCheck,
   Combine,
   Heart,
   Home,
@@ -13,7 +15,6 @@ import {
   Menu,
   Plus,
   Search,
-  ShieldCheck,
   Sparkles,
   WandSparkles,
   X,
@@ -30,7 +31,7 @@ export const portalCategoryIcons = {
   集計: BarChart3,
   結合: Combine,
   変換: Box,
-  チェック: ShieldCheck,
+  チェック: ClipboardCheck,
   抽出: Search,
 } satisfies Record<PortalCategory, LucideIcon>;
 
@@ -38,10 +39,11 @@ type PortalSidebarProps = {
   onCategory?: (category: PortalCategory) => void;
   onAllProcesses?: () => void;
   onFavorites?: () => void;
+  onOfficial?: () => void;
   onGuide?: () => void;
 };
 
-export function PortalSidebar({ onCategory, onAllProcesses, onFavorites, onGuide }: PortalSidebarProps) {
+export function PortalSidebar({ onCategory, onAllProcesses, onFavorites, onOfficial, onGuide }: PortalSidebarProps) {
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   function closeDrawer() {
@@ -64,6 +66,7 @@ export function PortalSidebar({ onCategory, onAllProcesses, onFavorites, onGuide
           <Link className="portal-nav-item" href="/#recommended" onClick={closeDrawer}><Sparkles /><span>おすすめの処理</span></Link>
           <Link className="portal-nav-item" href="/#discover" onClick={() => { onAllProcesses?.(); closeDrawer(); }}><LayoutGrid /><span>すべての処理</span></Link>
           <Link className="portal-nav-item portal-favorite-nav-item" href="/?favorites=1#discover" onClick={() => { onFavorites?.(); closeDrawer(); }}><Heart /><span>お気に入り処理</span></Link>
+          <Link className="portal-nav-item" href="/?official=1#discover" onClick={() => { onOfficial?.(); closeDrawer(); }}><BadgeCheck /><span>公式の処理</span></Link>
           <p className="portal-nav-heading">目的から探す</p>
           {portalCategories.map((item) => {
             const Icon = portalCategoryIcons[item];

@@ -1,10 +1,10 @@
 import { getBundledDemo } from "./demo-flow.ts";
 import type { AiSampleRow, FlowDraft, FlowSample, FlowStatus, FlowVisibility, ManagedFlow, PublicFlow, PublicFlowSummary } from "./flow-types.ts";
+import { browserClientId } from "./browser-client-id.ts";
 import { currentAccessToken, getSupabaseBrowserClient } from "./supabase-browser.ts";
 import { userDisplayName } from "./user-display-name.ts";
 
 const STORAGE_KEY = "clavisflow-studio:managed-flows:v1";
-const CLIENT_ID_KEY = "clavisflow-studio:anonymous-client-id:v1";
 
 function supabaseUrl() {
   return process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/$/, "");
@@ -32,14 +32,6 @@ function upsert(flow: ManagedFlow) {
   writeAll(flows);
 }
 
-function anonymousClientId(): string {
-  const existing = localStorage.getItem(CLIENT_ID_KEY);
-  if (existing && /^[a-f0-9]{32}$/i.test(existing)) return existing.toLowerCase();
-  const created = crypto.randomUUID().replaceAll("-", "");
-  localStorage.setItem(CLIENT_ID_KEY, created);
-  return created;
-}
-
 async function edge<T>(functionName: string, init: RequestInit = {}, query = ""): Promise<T> {
   const baseUrl = supabaseUrl();
   if (!baseUrl) throw new Error("Supabase is not configured");
@@ -51,7 +43,7 @@ async function edge<T>(functionName: string, init: RequestInit = {}, query = "")
   const accessToken = await currentAccessToken();
   if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
   if (functionName === "create-flow" || functionName === "generate-sql") {
-    headers.set("x-clavis-client-id", anonymousClientId());
+    headers.set("x-clavis-client-id", browserClientId());
   }
   const response = await fetch(`${baseUrl}/functions/v1/${functionName}${query}`, {
     ...init,

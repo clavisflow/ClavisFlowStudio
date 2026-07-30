@@ -66,6 +66,19 @@ test("unsafe generated SQL is rejected", () => {
   }), /安全性検査で拒否/);
 });
 
+test("generated SQL may use the REPLACE scalar function", () => {
+  const result = parseResponsesResult({
+    status: "completed",
+    output_text: JSON.stringify({
+      sql: `SELECT REPLACE("請求番号", '-', '') AS "請求番号" FROM "input_1"`,
+      summary: "請求番号からハイフンを除去します。",
+      warnings: [],
+      samples: null,
+    }),
+  });
+  assert.match(result.sql, /REPLACE\(/);
+});
+
 test("invalid AI input schemas are rejected before an API call", () => {
   assert.throws(() => parseAiInputSchemas([{ tableName: "input_1; DROP", columns: inputs[0].columns }]), /テーブル名が不正/);
   assert.throws(() => parseAiInputSchemas([{ tableName: "input_1", columns: [{ name: "列", type: "BLOB" }] }]), /データ型が不正/);

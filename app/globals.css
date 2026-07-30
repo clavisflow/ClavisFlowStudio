@@ -36,7 +36,9 @@ button, select, label { -webkit-tap-highlight-color: transparent; }
 .site-footer-meta nav { display: inline-flex; align-items: center; gap: 9px; }
 .site-footer-meta a { text-decoration: underline; text-underline-offset: 3px; }
 .site-footer-meta a:hover { color: var(--primary-dark); }
-.site-footer-wordmark { color: var(--text); font-size: 18px; font-weight: 750; letter-spacing: -.02em; }
+.site-footer-wordmark { display: inline-flex; align-items: center; line-height: 0; }
+.site-footer-wordmark img { display: block; width: 116px; height: auto; transition: opacity .2s; }
+.site-footer-wordmark:hover img { opacity: .78; }
 
 .legal-shell { width: min(100% - 48px, 860px); margin: 0 auto; padding: 54px 0 36px; }
 .legal-shell article { max-width: 780px; }
@@ -46,9 +48,9 @@ button, select, label { -webkit-tap-highlight-color: transparent; }
 .legal-date { margin: 12px 0 0; color: var(--muted); font-size: 14px; }
 .legal-shell section { margin-top: 38px; padding-top: 2px; }
 .legal-shell h2 { margin: 0 0 12px; font-size: 21px; line-height: 1.5; font-weight: 650; }
-.legal-shell p { margin: 10px 0 0; font-size: 15px; line-height: 1.9; }
+.legal-shell p { margin: 10px 0 0; font-size: 16px; line-height: 1.9; }
 .legal-shell ul { margin: 10px 0 0; padding-left: 24px; }
-.legal-shell li { margin-top: 6px; font-size: 15px; line-height: 1.8; }
+.legal-shell li { margin-top: 6px; font-size: 16px; line-height: 1.8; }
 .legal-shell a { color: var(--primary-dark); text-decoration: underline; text-underline-offset: 3px; }
 
 .studio-header,
@@ -148,6 +150,7 @@ button, select, label { -webkit-tap-highlight-color: transparent; }
 .status-label.published { color: var(--success); border-color: #7cb394; background: #f2faf5; }
 .row-actions { display: flex; align-items: center; gap: 14px; white-space: nowrap; }
 .row-actions a, .row-actions button { padding: 0; border: 0; color: var(--primary); background: transparent; font-size: 15px; text-decoration: underline; cursor: pointer; }
+.row-actions button { display: inline-flex; align-items: center; gap: 6px; }
 .row-actions button:disabled { color: var(--muted); cursor: wait; }
 
 .tool-shell { width: min(1080px, calc(100% - 48px)); margin: 0 auto; padding: 36px 0 40px; }
@@ -217,7 +220,7 @@ button, select, label { -webkit-tap-highlight-color: transparent; }
 .execution-summary span:last-child { color: var(--muted); }
 .processing-status { min-height: 120px; margin-top: 24px; display: flex; align-items: center; justify-content: center; gap: 14px; background: var(--surface); font-size: 17px; }
 
-.button { min-height: 46px; padding: 9px 20px; display: inline-flex; align-items: center; justify-content: center; border: 1px solid transparent; border-radius: 4px; font-size: 15px; font-weight: 700; cursor: pointer; }
+.button { min-height: 46px; padding: 9px 20px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid transparent; border-radius: 4px; font-size: 15px; font-weight: 700; cursor: pointer; }
 .button.primary { color: #fff; background: var(--primary); border-color: var(--primary); }
 .button.primary:hover:not(:disabled) { background: var(--primary-dark); border-color: var(--primary-dark); }
 .button.secondary { color: var(--text); background: transparent; border-color: var(--border-dark); }
@@ -433,6 +436,7 @@ button, select, label { -webkit-tap-highlight-color: transparent; }
 .input-reference span:last-child { color: var(--muted); text-align: right; }
 .output-fields { margin-top: 2px; }
 .instruction-field textarea { min-height: 150px; font-size: 17px; }
+.instruction-field > span small { color: var(--muted); font-size: 14px; font-weight: 500; }
 .ai-data-note { margin: -12px 0 0; display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: 15px; }
 .ai-data-note svg { color: var(--muted); flex: none; }
 .result-toolbar h3 { margin: 0; font-size: 22px; }
@@ -762,8 +766,8 @@ button:focus-visible, a:focus-visible, summary:focus-visible { outline: 3px soli
 .portal-browse-grid { margin-top: 0; }
 .portal-load-more { min-width: 180px; min-height: 46px; margin: 20px auto 0; padding: 0 20px; display: block; border: 1px solid #d8d5ef; border-radius: 10px; color: var(--portal-purple); background: #fff; font-size: 14px; font-weight: 700; cursor: pointer; }
 .portal-load-more:hover { border-color: #aaa4ed; background: #f8f7ff; }
-.portal-favorites-chip { display: inline-flex; align-items: center; gap: 6px; }
-.portal-favorites-chip svg { width: 16px; height: 16px; }
+.portal-favorites-chip, .portal-officials-chip { display: inline-flex; align-items: center; gap: 6px; }
+.portal-favorites-chip svg, .portal-officials-chip svg { width: 16px; height: 16px; }
 .portal-favorites-chip.active svg { fill: currentColor; }
 .portal-empty { min-height: 220px; padding: 35px; display: grid; place-items: center; align-content: center; border: 1px dashed #d7d5ea; border-radius: 13px; text-align: center; background: #fbfaff; }
 .portal-empty > svg { color: #9a92e5; }
@@ -847,15 +851,15 @@ button:focus-visible, a:focus-visible, summary:focus-visible { outline: 3px soli
 .runner-hero-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 9px; }
 .runner-copy-button { min-height: 42px; padding: 0 14px; display: inline-flex; align-items: center; gap: 7px; border: 1px solid #d7d9e2; border-radius: 9px; color: #555b6b; background: #fff; font-size: 14px; font-weight: 650; }
 .runner-copy-button:hover { color: var(--primary-dark); border-color: #b8b3ed; background: #faf9ff; }
-.runner-step-nav { margin-bottom: 24px; padding: 12px 18px; display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid #e4e3ed; border-radius: 12px; background: #fff; }
-.runner-step-nav a { min-height: 42px; padding: 5px 14px; display: flex; align-items: center; gap: 9px; border-right: 1px solid #ecebf2; color: #505668; font-size: 14px; font-weight: 650; }
+.runner-step-nav { margin-bottom: 24px; padding: 6px 14px; display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid #e4e3ed; border-radius: 12px; background: #fff; }
+.runner-step-nav a { min-height: 42px; padding: 4px 12px; display: flex; align-items: center; gap: 8px; border-right: 1px solid #ecebf2; color: #505668; font-size: 14px; font-weight: 650; }
 .runner-step-nav a:last-child { border-right: 0; }
 .runner-step-nav a:hover { color: var(--primary); }
-.runner-step-nav span { width: 26px; height: 26px; display: grid; place-items: center; flex: none; border-radius: 50%; color: var(--primary); background: #eeecff; font-size: 14px; font-weight: 800; }
+.runner-step-nav span { width: 24px; height: 24px; display: grid; place-items: center; flex: none; border-radius: 50%; color: var(--primary); background: #eeecff; font-size: 14px; font-weight: 800; }
 .runner-section { margin-top: 18px; padding: 28px; scroll-margin-top: 80px; border: 1px solid #e5e5ec; border-radius: 14px; background: #fff; box-shadow: 0 5px 18px rgb(31 31 54 / 3%); }
 .runner-section-heading { margin-bottom: 22px; }
-.runner-section-heading > div { display: flex; align-items: flex-start; gap: 13px; }
-.runner-step-number { width: 32px; height: 32px; display: grid; place-items: center; flex: none; border-radius: 9px; color: #fff; background: var(--primary); font-size: 15px; font-weight: 800; }
+.runner-section-heading > div { display: flex; align-items: flex-start; gap: 11px; }
+.runner-step-number { width: 28px; height: 28px; margin-top: 2px; display: grid; place-items: center; flex: none; border-radius: 8px; color: #fff; background: var(--primary); font-size: 14px; font-weight: 800; }
 .runner-section-heading h2 { margin: 0; font-size: 23px; line-height: 1.4; }
 .runner-section-heading p { margin: 5px 0 0; color: var(--muted); font-size: 15px; line-height: 1.65; }
 .runner-source-tabs { margin-bottom: 22px; display: flex; border-bottom: 1px solid #dedee7; }
@@ -1131,7 +1135,7 @@ button:focus-visible, a:focus-visible, summary:focus-visible { outline: 3px soli
   .runner-title-meta > div { grid-template-columns: 88px minmax(0, 1fr); }
   .runner-sample-button { align-self: flex-start; }
   .runner-hero-actions { justify-content: flex-start; }
-  .runner-step-nav { padding: 8px; grid-template-columns: 1fr; }
+  .runner-step-nav { padding: 6px 8px; grid-template-columns: 1fr; }
   .runner-step-nav a { padding: 7px 8px; border-right: 0; border-bottom: 1px solid #ecebf2; }
   .runner-step-nav a:last-child { border-bottom: 0; }
   .runner-section { padding: 20px 16px; border-radius: 11px; }

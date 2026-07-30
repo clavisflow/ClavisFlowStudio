@@ -1,7 +1,7 @@
 import { adminClient } from "./db.ts";
 import { HttpError } from "./http.ts";
 
-type Action = "create-flow" | "generate-sql";
+type Action = "create-flow" | "generate-sql" | "flow-usage";
 type Limit = { scope: "browser" | "ip" | "global"; windowSeconds: number; maximum: number };
 
 const limits: Record<Action, Limit[]> = {
@@ -20,6 +20,13 @@ const limits: Record<Action, Limit[]> = {
     { scope: "ip", windowSeconds: 3600, maximum: 60 },
     { scope: "ip", windowSeconds: 86400, maximum: 150 },
     { scope: "global", windowSeconds: 86400, maximum: 100 },
+  ],
+  "flow-usage": [
+    { scope: "browser", windowSeconds: 60, maximum: 60 },
+    { scope: "browser", windowSeconds: 86400, maximum: 1000 },
+    { scope: "ip", windowSeconds: 60, maximum: 300 },
+    { scope: "ip", windowSeconds: 86400, maximum: 10000 },
+    { scope: "global", windowSeconds: 86400, maximum: 100000 },
   ],
 };
 

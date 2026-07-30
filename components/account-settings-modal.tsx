@@ -88,7 +88,7 @@ export function AccountSettingsModal({ onClose, onSaved }: AccountSettingsModalP
                 aria-invalid={Boolean(error)}
               />
             </div>
-            <small>今後、処理を公開・更新した際の更新者名として使用します。</small>
+            <small>処理を公開・更新した際の更新者名として使用します。</small>
           </label>
 
           <label className="account-settings-field">

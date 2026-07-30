@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { LoaderCircle } from "lucide-react";
 import { useEffect, useState } from "react";
 import { editUrl, listManagedFlows, normalizeFlowVisibility, publicRunUrl, setManagedFlowPublished } from "@/lib/flow-store";
 import type { ManagedFlow } from "@/lib/flow-types";
@@ -65,7 +66,10 @@ export function FlowDashboard() {
                     <div className="row-actions">
                       <Link href={editUrl(flow)}>編集</Link>
                       {flow.status === "published" && <Link href={publicRunUrl(flow.publicId)} target="_blank">公開画面</Link>}
-                      <button disabled={busyId === flow.publicId} onClick={() => void togglePublication(flow)}>{flow.status === "published" ? "公開停止" : "公開する"}</button>
+                      <button aria-busy={busyId === flow.publicId} disabled={busyId === flow.publicId} onClick={() => void togglePublication(flow)}>
+                        {busyId === flow.publicId && <LoaderCircle className="spin-icon" size={16} aria-hidden="true" />}
+                        {busyId === flow.publicId ? flow.status === "published" ? "停止しています..." : "公開しています..." : flow.status === "published" ? "公開停止" : "公開する"}
+                      </button>
                     </div>
                   </td>
                 </tr>

@@ -10,6 +10,7 @@ import {
   FileJson,
   FileSpreadsheet,
   FileText,
+  LoaderCircle,
   Play,
   RefreshCw,
   Sheet,
@@ -23,6 +24,7 @@ import { loadPublicFlow } from "@/lib/flow-store";
 import { ProcessingClient } from "@/lib/processing-client";
 import { ResultTable } from "@/components/result-table";
 import { recordSuccessfulRun } from "@/lib/portal-activity";
+import { recordFlowUsage } from "@/lib/usage-store";
 import { applyA1Range, jsonTargets, rowsToCsv, type TabularRows } from "@/lib/tabular-data";
 
 type DataSourceKind = "file" | "google";
@@ -511,6 +513,7 @@ export function FlowRunner() {
       setResult(preview);
       setExecutionStatus("success");
       recordSuccessfulRun(flow.publicId);
+      void recordFlowUsage(flow.publicId).catch(() => undefined);
       requestAnimationFrame(() => document.querySelector("#run-result")?.scrollIntoView({ behavior: "smooth", block: "start" }));
     } catch (runError) {
       setExecutionStatus("failure");
@@ -531,6 +534,8 @@ export function FlowRunner() {
 
   async function runDemoSample() {
     if (!flow || !client.current) return;
+    setRunning(true);
+    setPhase("サンプルを読み込んでいます");
     try {
       const sampleContents = getBundledSampleFiles(flow.publicId);
       const sampleStates: Record<string, InputState> = {};
@@ -551,6 +556,9 @@ export function FlowRunner() {
     } catch (sampleError) {
       setExecutionStatus("failure");
       setError(sampleError instanceof Error ? sampleError.message : "サンプルを実行できませんでした。");
+    } finally {
+      setRunning(false);
+      setPhase("");
     }
   }
 
@@ -687,12 +695,13 @@ export function FlowRunner() {
             <div><dt>公開ID</dt><dd>{flow.publicId}</dd></div>
             <div><dt>バージョン</dt><dd>{flow.version}</dd></div>
             <div><dt>更新日</dt><dd>{formatUpdatedAt(flow.updatedAt)}</dd></div>
-            <div><dt>更新者</dt><dd>{flow.updatedBy ?? "追加予定"}</dd></div>
+            <div><dt>更新者</dt><dd>{flow.updatedBy ?? "---"}</dd></div>
           </dl>
           <div className="runner-hero-actions">
             {hasBundledSamples && (
-              <button className="runner-sample-button" disabled={running} onClick={() => void runDemoSample()}>
-                <Play size={17} aria-hidden="true" />サンプルですぐ実行
+              <button className="runner-sample-button" aria-busy={running} disabled={running} onClick={() => void runDemoSample()}>
+                {running ? <LoaderCircle className="spin-icon" size={18} aria-hidden="true" /> : <Play size={17} aria-hidden="true" />}
+                {running ? "サンプルを実行しています..." : "サンプルですぐ実行"}
               </button>
             )}
             <a className="runner-copy-button" href={`/flows/new/?copy=${encodeURIComponent(flow.publicId)}`}>
@@ -864,7 +873,7 @@ export function FlowRunner() {
         {running && <div className="processing-status"><span className="spinner" /><strong>{phase || "処理中"}</strong><button className="text-button danger" onClick={() => client.current?.cancel()}>キャンセル</button></div>}
         <div className="runner-execute-actions">
           <button className="button plain" disabled={running} onClick={() => dataSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}><RefreshCw size={17} aria-hidden="true" />データを変更</button>
-          <button className="button primary runner-execute-button" disabled={!canRun || running} onClick={() => void runSelectedFiles()}><Play size={17} aria-hidden="true" />{running ? "処理を実行しています..." : "処理を実行"}</button>
+          <button className="button primary runner-execute-button" aria-busy={running} disabled={!canRun || running} onClick={() => void runSelectedFiles()}>{running ? <LoaderCircle className="spin-icon" size={18} aria-hidden="true" /> : <Play size={17} aria-hidden="true" />}{running ? "処理を実行しています..." : "処理を実行"}</button>
         </div>
         {!canRun && !running && <p className="runner-disabled-note">すべての必要な項目に入力列を対応させると実行できます。</p>}
       </section>
