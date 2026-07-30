@@ -10,7 +10,3 @@ export const flowCategoryLabels: Record<FlowCategory, string> = {
   チェック: "チェックする",
   抽出: "抽出する",
 };
-
-export function isFlowCategory(value: unknown): value is FlowCategory {
-  return typeof value === "string" && flowCategories.includes(value as FlowCategory);
-}
