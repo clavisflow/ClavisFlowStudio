@@ -31,3 +31,8 @@ test("限定公開の作成と公開はサーバー側でもログイン必須�
   assert.match(publishFlow, /visibility === "unlisted" && !user/);
   assert.match(updateFlow, /visibility !== currentVisibility && !user/);
 });
+
+test("公開処理をコピーしたときは限定公開を初期選択する", async () => {
+  const editor = await readFile(new URL("../components/flow-editor.tsx", import.meta.url), "utf8");
+  assert.match(editor, /if \(copyId\)[\s\S]*?visibility: "unlisted"/);
+});

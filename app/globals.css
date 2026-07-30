@@ -1064,8 +1064,12 @@ button:focus-visible, a:focus-visible, summary:focus-visible { outline: 3px soli
 .auth-callback { min-height: 100vh; display: grid; place-items: center; }
 
 .publish-samples-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+.publish-samples-heading > div { width: 100%; }
+.publish-samples-title-row { width: 100%; display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; }
 .publish-samples-heading h2 { margin: 0; font-size: 20px; }
 .publish-samples-heading p { margin: 6px 0 0; color: var(--muted); font-size: 15px; line-height: 1.65; }
+.publish-samples-heading .publish-samples-warning { margin: 0 0 0 auto; display: flex; align-items: center; gap: 6px; color: #74520c; font-size: 14px; line-height: 1.55; }
+.publish-samples-warning svg { flex: none; }
 .publish-login-note { padding: 16px; display: flex; align-items: center; justify-content: space-between; gap: 18px; border: 1px solid #dedee8; border-radius: 9px; background: #fafafd; }
 .publish-login-note strong { display: block; font-size: 15px; }
 .publish-login-note p { margin: 4px 0 0; color: var(--muted); font-size: 14px; line-height: 1.55; }

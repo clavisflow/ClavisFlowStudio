@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ArrowRight, Code2, Download, ExternalLink, EyeOff, FlaskConical, Globe2, Link2, LoaderCircle, LogIn, RefreshCw, Sparkles, Trash2, UploadCloud } from "lucide-react";
+import { AlertTriangle, ArrowRight, Code2, Download, ExternalLink, EyeOff, FlaskConical, Globe2, Link2, LoaderCircle, LogIn, RefreshCw, Sparkles, Trash2, UploadCloud } from "lucide-react";
 import { DataSourceCard, DataSourcePicker, GoogleSheetModal } from "@/components/data-source-ui";
 import { createManagedFlow, deleteManagedFlow, generateFlowSql, loadEditableFlow, loadPublicFlow, normalizeFlowVisibility, publicRunUrl, savedFlowFromPublicationError, setManagedFlowPublished, updateManagedFlow, uploadManagedFlowSamples } from "@/lib/flow-store";
 import type { CsvEncoding, FileAnalysis, FlowDraft, FlowInput, InputColumn, ManagedFlow, PublicFlow, QueryResult } from "@/lib/flow-types";
@@ -363,7 +363,7 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
           const copiedDraft: FlowDraft = applySqlRequiredColumns({
             name: `${flow.name}（コピー）`,
             description: flow.description,
-            visibility: "public",
+            visibility: "unlisted",
             categories: flow.categories ?? [],
             instruction: copiedInstruction,
             inputs: flow.inputs.map((input) => ({ ...input, requiredColumns: input.requiredColumns.map((column) => ({ ...column })) })),
@@ -598,25 +598,27 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
     setAiGenerating(true);
     try {
       let sql = draft.sql;
+      let draftForPreview = draft;
       if (needsGeneration) {
         const generated = await generateFlowSql(trimmedInstruction, draft.inputs);
         sql = generated.sql;
         setAiWarnings(generated.samples
           ? generated.warnings
           : [...generated.warnings, "編集用AIサンプルを生成できなかったため、SQLだけを使用します。"]);
-        setDraft((current) => applySqlRequiredColumns({
-          ...current,
+        draftForPreview = applySqlRequiredColumns({
+          ...draft,
           sql,
           aiSamples: generated.samples ? {
             generatedAt: new Date().toISOString(),
-            definitionSignature: aiSampleSignature(sql, current.inputs),
+            definitionSignature: aiSampleSignature(sql, draft.inputs),
             inputs: generated.samples,
           } : undefined,
-        }));
+        });
+        setDraft(draftForPreview);
         setGeneratedInstruction(trimmedInstruction);
         setHasGeneratedSql(true);
       }
-      await runPreview(sql);
+      await runPreview(sql, draftForPreview);
     } catch (generationError) {
       setError(generationError instanceof Error ? generationError.message : "SQLを生成できませんでした。");
     } finally {
@@ -624,14 +626,14 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
     }
   }
 
-  async function runPreview(sqlOverride = draft.sql) {
+  async function runPreview(sqlOverride = draft.sql, baseDraft = draft) {
     setError(undefined);
-    const draftWithRequiredColumns = applySqlRequiredColumns({ ...draft, sql: sqlOverride });
+    const draftWithRequiredColumns = applySqlRequiredColumns({ ...baseDraft, sql: sqlOverride });
     const preparedDraft = prepareDraft(draftWithRequiredColumns, fileStates, instruction);
     setDraft(draftWithRequiredColumns);
     const validationError = validatePreviewDraft(preparedDraft);
     if (validationError) { setError(validationError); return; }
-    const missingFile = draft.inputs.find((input) => !files.current[input.id]);
+    const missingFile = draftWithRequiredColumns.inputs.find((input) => !files.current[input.id]);
     if (missingFile) { setError("結果を確認するには、Step 1でテスト用CSVを追加してください。"); return; }
     for (const input of preparedDraft.inputs) {
       const headers = fileStates[input.id]?.analysis?.headers ?? [];
@@ -1096,7 +1098,16 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
               </section>
               <section className="publish-card publish-samples" aria-labelledby="publish-samples-title">
                 <div className="publish-samples-heading">
-                  <div><h2 id="publish-samples-title">サンプルデータ</h2><p>編集時の結果確認や、公開ページの「サンプルですぐ実行」に使用します。</p></div>
+                  <div>
+                    <div className="publish-samples-title-row">
+                      <h2 id="publish-samples-title">サンプルデータ</h2>
+                      <p className="publish-samples-warning">
+                        <AlertTriangle size={17} aria-hidden="true" />
+                        サンプルデータに個人情報・機密情報・実在する顧客データを含めないでください。
+                      </p>
+                    </div>
+                    <p>編集時の結果確認や、公開ページの「サンプルですぐ実行」に使用します。</p>
+                  </div>
                 </div>
                 <div className="publish-card-body">
                   {!user ? (
@@ -1119,7 +1130,7 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
                               </div>
                             ) : (
                               <div className="publish-sample-actions">
-                                {hasCurrentAiSample && <button type="button" onClick={() => void selectAiSampleFile(input)}><Sparkles size={17} aria-hidden="true" />AIサンプルを公開用に使う</button>}
+                                {hasCurrentAiSample && <button type="button" onClick={() => void selectAiSampleFile(input)}><Sparkles size={17} aria-hidden="true" />AIサンプルを使う</button>}
                                 {testFile && !testFileIsAiSample && <button type="button" onClick={() => selectSampleFile(input.id, testFile)}>現在のテストデータを使う</button>}
                                 <label><UploadCloud size={17} aria-hidden="true" /><span>ファイルを選択</span><input type="file" accept=".csv,.xlsx,.json,text/csv,application/json,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={(event) => { const file = event.target.files?.[0]; if (file) selectSampleFile(input.id, file); }} /></label>
                               </div>
