@@ -10,6 +10,7 @@ import { inspectSqlStructure } from "@/lib/sql-safety";
 import { normalizeResultValue, resultColumnKind } from "@/lib/result-format";
 import { buildQueryResult } from "@/lib/query-result";
 import { DUCKDB_ASSET_BASE_PATH } from "@/lib/duckdb-assets";
+import { duckDbCsvOptions, duckDbInputProjection } from "@/lib/duckdb-csv";
 
 type AnalyzeMessage = { id: string; type: "analyze"; bytes: ArrayBuffer; encoding: CsvEncoding; delimiter: string; headerRow: number | null };
 type WarmupMessage = { id: string; type: "warmup" };
@@ -176,21 +177,10 @@ async function executeFlow(message: RunMessage): Promise<QueryResult> {
       const fileName = `${input.tableName}.csv`;
       await db.registerFileBuffer(fileName, new TextEncoder().encode(decoded.text));
       registeredFiles.push(fileName);
-      const delimiter = file.delimiter.replaceAll("'", "''");
-      const skip = headerRow === null ? 0 : Math.max(0, headerRow - 1);
       const rawTableName = `__raw_${input.tableName}`;
       const quotedRawTable = quoteIdentifier(rawTableName);
-      const headerOptions = headerRow === null
-        ? `header = false, names = [${headers.map(quoteStringLiteral).join(", ")}]`
-        : `header = true, skip = ${skip}`;
-      await connection.query(`CREATE OR REPLACE TEMP VIEW ${quotedRawTable} AS SELECT * FROM read_csv_auto('${fileName}', ${headerOptions}, delim = '${delimiter}', sample_size = -1, normalize_names = false)`);
-      const existing = new Set(headers);
-      const remappedTargets = new Set(requiredColumns.filter((column) => file.columnMapping[column.name] !== column.name).map((column) => column.name));
-      const originalColumns = headers.filter((header) => !remappedTargets.has(header)).map(quoteIdentifier);
-      const aliases = requiredColumns
-        .filter((column) => file.columnMapping[column.name] !== column.name || !existing.has(column.name))
-        .map((column) => `${quoteIdentifier(file.columnMapping[column.name])} AS ${quoteIdentifier(column.name)}`);
-      const projection = [...originalColumns, ...aliases].join(", ");
+      await connection.query(`CREATE OR REPLACE TEMP VIEW ${quotedRawTable} AS SELECT * FROM read_csv_auto('${fileName}', ${duckDbCsvOptions(headers, headerRow, file.delimiter)})`);
+      const projection = duckDbInputProjection(headers, requiredColumns, file.columnMapping);
       await connection.query(`CREATE OR REPLACE TEMP VIEW ${quoteIdentifier(input.tableName)} AS SELECT ${projection} FROM ${quotedRawTable}`);
     }
 
@@ -216,10 +206,6 @@ function normalizeRow(row: Record<string, unknown>, columns: string[], columnKin
 
 function quoteIdentifier(value: string) {
   return `"${value.replaceAll('"', '""')}"`;
-}
-
-function quoteStringLiteral(value: string) {
-  return `'${value.replaceAll("'", "''")}'`;
 }
 
 export {};

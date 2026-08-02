@@ -10,6 +10,7 @@ export function analyzeCsv(text: string, delimiter: string, requestedHeaderRow: 
   let maximumColumnCount = 0;
   let rowCount = 0;
   const samples: string[][] = [];
+  const typeProfiles: ColumnTypeProfile[] = [];
 
   function commitRow() {
     row.push(value.trim());
@@ -19,6 +20,7 @@ export function analyzeCsv(text: string, delimiter: string, requestedHeaderRow: 
     else if ((headerRow === null || rowNumber > headerRow) && !isEmpty) {
       maximumColumnCount = Math.max(maximumColumnCount, row.length);
       rowCount += 1;
+      updateTypeProfiles(typeProfiles, row);
       if (samples.length < 500) samples.push([...row]);
     }
     row = [];
@@ -55,7 +57,7 @@ export function analyzeCsv(text: string, delimiter: string, requestedHeaderRow: 
   return {
     headers,
     rowCount,
-    columnTypes: headers.map((_, index) => inferColumnType(samples.map((sample) => sample[index] ?? ""))),
+    columnTypes: headers.map((_, index) => inferredColumnType(typeProfiles[index])),
     sampleValues: Object.fromEntries(headers.map((header, index) => [
       header,
       samples.map((sample) => sample[index] ?? "").filter(Boolean).slice(0, 3),
@@ -63,12 +65,31 @@ export function analyzeCsv(text: string, delimiter: string, requestedHeaderRow: 
   };
 }
 
-function inferColumnType(values: string[]): InputColumn["type"] {
-  const populated = values.filter((value) => value !== "");
-  if (!populated.length) return "VARCHAR";
-  if (populated.every((value) => /^(true|false)$/i.test(value))) return "BOOLEAN";
-  if (populated.every((value) => /^-?(0|[1-9]\d*)$/.test(value))) return "BIGINT";
-  if (populated.every((value) => /^-?(?:0|[1-9]\d*)(?:\.\d+)?$/.test(value))) return "DOUBLE";
-  if (populated.every((value) => /^\d{4}[-/]\d{1,2}[-/]\d{1,2}$/.test(value) && !Number.isNaN(Date.parse(value.replaceAll("/", "-"))))) return "DATE";
+type ColumnTypeProfile = {
+  populated: boolean;
+  boolean: boolean;
+  bigint: boolean;
+  double: boolean;
+  date: boolean;
+};
+
+function updateTypeProfiles(profiles: ColumnTypeProfile[], row: string[]) {
+  row.forEach((value, index) => {
+    if (value === "") return;
+    const profile = profiles[index] ??= { populated: false, boolean: true, bigint: true, double: true, date: true };
+    profile.populated = true;
+    profile.boolean &&= /^(true|false)$/i.test(value);
+    profile.bigint &&= /^-?(0|[1-9]\d*)$/.test(value);
+    profile.double &&= /^-?(?:0|[1-9]\d*)(?:\.\d+)?$/.test(value);
+    profile.date &&= /^\d{4}[-/]\d{1,2}[-/]\d{1,2}$/.test(value) && !Number.isNaN(Date.parse(value.replaceAll("/", "-")));
+  });
+}
+
+function inferredColumnType(profile?: ColumnTypeProfile): InputColumn["type"] {
+  if (!profile?.populated) return "VARCHAR";
+  if (profile.boolean) return "BOOLEAN";
+  if (profile.bigint) return "BIGINT";
+  if (profile.double) return "DOUBLE";
+  if (profile.date) return "DATE";
   return "VARCHAR";
 }

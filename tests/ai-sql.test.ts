@@ -18,6 +18,9 @@ test("Responses API request sends schema only and requires structured output", (
   assert.match(serialized, /generateSamples/);
   assert.match(serialized, /samples/);
   assert.doesNotMatch(serialized, /CSVの行データ/);
+  assert.match(serialized, /VARCHAR.*TRY_CAST/s);
+  assert.match(serialized, /２ＬＤＫ.*2LDK/);
+  assert.match(serialized, /After UNION.*ORDER BY.*subquery or CTE/s);
 });
 
 test("70列の入力でも編集用AIサンプルを生成する", () => {

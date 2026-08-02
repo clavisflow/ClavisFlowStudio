@@ -23,11 +23,18 @@ test("通常のヘッダー行指定は従来どおり動く", () => {
   assert.equal(result.rowCount, 1);
 });
 
+test("列型は先頭500行だけでなく全データ行から判定する", () => {
+  const numericRows = Array.from({ length: 500 }, (_, index) => String(index + 1));
+  const result = analyzeCsv(["所要時間", ...numericRows, "30分～60分"].join("\n"), ",", 1);
+  assert.equal(result.columnTypes[0], "VARCHAR");
+  assert.deepEqual(result.sampleValues.所要時間.slice(0, 3), ["1", "2", "3"]);
+});
+
 test("作成画面と実行画面は範囲内ヘッダーと空欄を扱う", async () => {
-  const [editor, runner, worker] = await Promise.all([
+  const [editor, runner, duckDbCsv] = await Promise.all([
     readFile(new URL("../components/flow-editor.tsx", import.meta.url), "utf8"),
     readFile(new URL("../components/flow-runner.tsx", import.meta.url), "utf8"),
-    readFile(new URL("../workers/processing.worker.ts", import.meta.url), "utf8"),
+    readFile(new URL("../lib/duckdb-csv.ts", import.meta.url), "utf8"),
   ]);
   for (const source of [editor, runner]) {
     assert.match(source, /ヘッダー行（指定範囲内）/);
@@ -38,5 +45,5 @@ test("作成画面と実行画面は範囲内ヘッダーと空欄を扱う", as
   }
   assert.match(editor, /hasExplicitA1StartRow\(range\).*headerRow: 1/s);
   assert.match(runner, /resetHeaderRow.*hasExplicitA1StartRow\(patch\.range\)/s);
-  assert.match(worker, /header = false, names =/);
+  assert.match(duckDbCsv, /header = false, names =/);
 });

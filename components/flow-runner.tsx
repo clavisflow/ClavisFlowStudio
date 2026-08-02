@@ -28,6 +28,7 @@ import { ProcessingClient } from "@/lib/processing-client";
 import { formatElapsedSeconds } from "@/lib/result-format";
 import { assignFilesToInputs } from "@/lib/input-file-assignment";
 import { analyzeWithInputRecovery } from "@/lib/input-analysis-recovery";
+import { splitHttpLinks } from "@/lib/text-links";
 import { ResultTable } from "@/components/result-table";
 import { recordSuccessfulRun } from "@/lib/portal-activity";
 import { recordFlowUsage } from "@/lib/usage-store";
@@ -756,7 +757,7 @@ export function FlowRunner() {
         <div>
           <p className="runner-eyebrow">公開処理</p>
           <h1>{flow.name}</h1>
-          {flow.description && <p className="runner-description">{flow.description}</p>}
+          {flow.description && <p className="runner-description"><LinkedDescription text={flow.description} /></p>}
         </div>
         <div className="runner-hero-side">
           <dl className="runner-title-meta">
@@ -1065,6 +1066,12 @@ function MatchStatus({ status }: { status: ColumnMatch["status"] }) {
   if (status === "automatic") return <span className="runner-match-status automatic"><CheckCircle2 aria-hidden="true" />自動対応</span>;
   if (status === "review") return <span className="runner-match-status review"><AlertTriangle aria-hidden="true" />要確認</span>;
   return <span className="runner-match-status unmapped"><CircleDashed aria-hidden="true" />未対応</span>;
+}
+
+function LinkedDescription({ text }: { text: string }) {
+  return splitHttpLinks(text).map((segment, index) => segment.kind === "link"
+    ? <a key={`link-${index}`} href={segment.value} target="_blank" rel="noopener noreferrer">{segment.value}</a>
+    : <span key={`text-${index}`}>{segment.value}</span>);
 }
 
 function swapRefEntries<T>(record: Record<string, T>, firstId: string, secondId: string) {
