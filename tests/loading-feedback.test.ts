@@ -22,5 +22,5 @@ test("公開処理の実行結果は行数と処理時間だけをコンパク�
   assert.doesNotMatch(runner, /処理が正常に完了しました/);
   assert.doesNotMatch(runner, /結果プレビュー/);
   assert.doesNotMatch(runner, /runner-result-metrics/);
-  assert.match(runner, /className="runner-result-meta">出力 \{result\.totalRows\.toLocaleString\(\)\}行・処理 \{result\.elapsedMs\.toLocaleString\(\)\}ms/);
+  assert.match(runner, /className="runner-result-meta">出力 \{result\.totalRows\.toLocaleString\(\)\}行・処理 \{formatElapsedSeconds\(result\.elapsedMs\)\}/);
 });

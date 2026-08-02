@@ -1,6 +1,8 @@
 export type TabularCell = string | number | boolean | Date | null | undefined;
 export type TabularRows = TabularCell[][];
 
+const A1_RANGE_PATTERN = /^(?:[^!]+!)?([A-Za-z]+)(\d*)?(?::([A-Za-z]+)?(\d*)?)?$/;
+
 export function rowsToCsv(rows: TabularRows): string {
   return `${rows.map((row) => row.map((cell) => escapeCsvCell(cell)).join(",")).join("\r\n")}\r\n`;
 }
@@ -14,7 +16,7 @@ export function jsonTargets(value: unknown): Array<{ path: string; rows: Tabular
 export function applyA1Range(rows: TabularRows, range: string): TabularRows {
   const trimmed = range.trim();
   if (!trimmed) return rows;
-  const match = /^(?:[^!]+!)?([A-Za-z]+)(\d*)?(?::([A-Za-z]+)?(\d*)?)?$/.exec(trimmed);
+  const match = A1_RANGE_PATTERN.exec(trimmed);
   if (!match) throw new Error("範囲は A1:D100 の形式で入力してください。");
   const startColumn = columnNumber(match[1]);
   const startRow = match[2] ? Number(match[2]) - 1 : 0;
@@ -22,6 +24,11 @@ export function applyA1Range(rows: TabularRows, range: string): TabularRows {
   const endRow = match[4] ? Number(match[4]) : rows.length;
   if (startRow < 0 || endRow < startRow || endColumn <= startColumn) throw new Error("入力範囲を確認してください。");
   return rows.slice(startRow, endRow).map((row) => row.slice(startColumn, endColumn));
+}
+
+export function hasExplicitA1StartRow(range: string) {
+  const match = A1_RANGE_PATTERN.exec(range.trim());
+  return Boolean(match?.[2]);
 }
 
 function collectJsonTargets(value: unknown, path: string, targets: Array<{ path: string; rows: TabularRows }>, depth: number) {

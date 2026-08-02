@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { formatResultValue, normalizeResultValue, resultColumnKind } from "../lib/result-format.ts";
+import { formatElapsedSeconds, formatResultValue, normalizeResultValue, resultColumnKind } from "../lib/result-format.ts";
+
+test("処理時間を小数付きの秒で表示する", () => {
+  assert.equal(formatElapsedSeconds(1234), "1.234秒");
+  assert.equal(formatElapsedSeconds(1200), "1.2秒");
+  assert.equal(formatElapsedSeconds(1000), "1.0秒");
+});
 
 test("DuckDB numeric result types are formatted with grouping separators", () => {
   assert.equal(resultColumnKind("Int64"), "number");

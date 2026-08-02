@@ -100,6 +100,8 @@ type DataSourceCardProps = {
   columnCount?: number;
   busy?: boolean;
   actionsDisabled?: boolean;
+  orderingDisabled?: boolean;
+  showActions?: boolean;
   error?: string;
   onMove: (direction: -1 | 1) => void;
   onDelete: () => void;
@@ -118,6 +120,8 @@ export function DataSourceCard({
   columnCount,
   busy = false,
   actionsDisabled = false,
+  orderingDisabled = false,
+  showActions = true,
   error,
   onMove,
   onDelete,
@@ -138,15 +142,15 @@ export function DataSourceCard({
           <h3>{resourceName}</h3>
         </div>
         <span className="data-source-kind">{kindLabel}</span>
-        <div className="data-source-card-actions" aria-label={`${sourceName}の操作`}>
+        {showActions && <div className="data-source-card-actions" aria-label={`${sourceName}の操作`}>
           {showOrdering && (
             <>
-              <button type="button" aria-label="上へ移動" disabled={index === 0 || busy || actionsDisabled} onClick={() => onMove(-1)}><ArrowUp size={18} /></button>
-              <button type="button" aria-label="下へ移動" disabled={index === total - 1 || busy || actionsDisabled} onClick={() => onMove(1)}><ArrowDown size={18} /></button>
+              <button type="button" aria-label="上へ移動" disabled={index === 0 || busy || actionsDisabled || orderingDisabled} onClick={() => onMove(-1)}><ArrowUp size={18} /></button>
+              <button type="button" aria-label="下へ移動" disabled={index === total - 1 || busy || actionsDisabled || orderingDisabled} onClick={() => onMove(1)}><ArrowDown size={18} /></button>
             </>
           )}
           <button type="button" className="danger" aria-label={`${sourceName}を削除`} disabled={busy || actionsDisabled} onClick={onDelete}><Trash2 size={18} /></button>
-        </div>
+        </div>}
       </header>
 
       <dl className="data-source-facts">

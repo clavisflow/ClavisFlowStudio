@@ -10,13 +10,13 @@ export class ProcessingClient {
 
   constructor(onProgress?: (phase: string) => void) { this.onProgress = onProgress; }
 
-  async analyze(file: File, encoding: CsvEncoding, delimiter: string, headerRow = 1): Promise<FileAnalysis> {
+  async analyze(file: File, encoding: CsvEncoding, delimiter: string, headerRow: number | null = 1): Promise<FileAnalysis> {
     const result = await this.request("analyze", { bytes: file.arrayBuffer(), encoding, delimiter, headerRow }, 15_000) as FileAnalysis;
     void this.warmup().catch(() => { /* run() retries initialization and reports an actionable error */ });
     return result;
   }
 
-  run(flow: PublicFlow, files: Array<{ tableName: string; file: File; encoding: CsvEncoding; delimiter: string; headerRow: number; columnMapping: Record<string, string> }>): Promise<QueryResult> {
+  run(flow: PublicFlow, files: Array<{ tableName: string; file: File; encoding: CsvEncoding; delimiter: string; headerRow: number | null; columnMapping: Record<string, string> }>): Promise<QueryResult> {
     const prepared = Promise.all(files.map(async (item) => ({ ...item, bytes: await item.file.arrayBuffer(), file: undefined })));
     return this.request("run", { flow, files: prepared }, 60_000) as Promise<QueryResult>;
   }

@@ -1,5 +1,9 @@
 import type { ResultColumnKind } from "./flow-types.ts";
 
+export function formatElapsedSeconds(elapsedMs: number) {
+  return `${(elapsedMs / 1000).toLocaleString("ja-JP", { minimumFractionDigits: 1, maximumFractionDigits: 3 })}秒`;
+}
+
 export function resultColumnKind(typeName: string): ResultColumnKind {
   const normalized = typeName.toLowerCase();
   if (normalized.includes("timestamp")) return "datetime";

@@ -20,6 +20,40 @@ test("Responses API request sends schema only and requires structured output", (
   assert.doesNotMatch(serialized, /CSVの行データ/);
 });
 
+test("70列の入力でも編集用AIサンプルを生成する", () => {
+  const wideInputs = [{
+    tableName: "wide_input",
+    columns: Array.from({ length: 70 }, (_, index) => ({ name: `列${index + 1}`, type: "VARCHAR" })),
+  }];
+  const request = buildResponsesRequest("gpt-5.6-terra", "集計して。", wideInputs);
+  const userInput = JSON.parse(request.input[1].content);
+  assert.equal(userInput.generateSamples, true);
+  assert.equal(request.max_output_tokens, 12000);
+});
+
+test("81列を超える入力では編集用AIサンプルを生成しない", () => {
+  const wideInputs = [{
+    tableName: "wide_input",
+    columns: Array.from({ length: 81 }, (_, index) => ({ name: `列${index + 1}`, type: "VARCHAR" })),
+  }];
+  const request = buildResponsesRequest("gpt-5.6-terra", "集計して。", wideInputs);
+  const userInput = JSON.parse(request.input[1].content);
+  assert.equal(userInput.generateSamples, false);
+  assert.equal(request.max_output_tokens, 5000);
+  const result = parseResponsesResult({
+    status: "completed",
+    output_text: JSON.stringify({
+      sql: 'SELECT "列1" FROM "wide_input"',
+      summary: "列1を表示します。",
+      warnings: ["入力列が多いためAIサンプルを生成できませんでした。"],
+      samples: null,
+    }),
+  }, wideInputs);
+  assert.deepEqual(result.warnings, [
+    "入力列が合計81列あり、生成上限の80列を超えているため、編集用AIサンプルを使用できませんでした。SQLだけを使用します。",
+  ]);
+});
+
 test("Responses API structured result is parsed and safety-checked", () => {
   const parsedInputs = parseAiInputSchemas(inputs);
   const result = parseResponsesResult({
@@ -51,12 +85,15 @@ test("invalid editing samples do not discard otherwise safe SQL", () => {
     output_text: JSON.stringify({
       sql: 'SELECT "請求番号" FROM "input_1"',
       summary: "請求番号を表示します。",
-      warnings: [],
+      warnings: [
+        "AIサンプルを生成できませんでした。",
+        "編集用サンプルの作成に失敗したため、SQLのみ返します。",
+      ],
       samples: { input_1: [{ 請求番号: "請求1" }] },
     }),
   }, parseAiInputSchemas(inputs));
   assert.equal(result.samples, undefined);
-  assert.match(result.warnings.at(-1) ?? "", /AIサンプル/);
+  assert.deepEqual(result.warnings, ["AIが返したサンプルの行数が不足または超過していたため、編集用AIサンプルを使用できませんでした。SQLだけを使用します。"]);
 });
 
 test("unsafe generated SQL is rejected", () => {

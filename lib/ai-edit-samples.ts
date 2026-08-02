@@ -1,14 +1,42 @@
 import type { AiSampleSet, FlowDraft, FlowInput } from "./flow-types.ts";
 import type { TabularRows } from "./tabular-data.ts";
 
+const missingAiSampleWarning = "編集用AIサンプルを生成できなかったため、SQLだけを使用します。";
+
+export function aiGenerationWarnings(warnings: string[], hasSamples: boolean) {
+  const uniqueWarnings = [...new Set(warnings)];
+  if (hasSamples || uniqueWarnings.some(isAiSampleGenerationWarning)) return uniqueWarnings;
+  return [...uniqueWarnings, missingAiSampleWarning];
+}
+
+export function aiSampleEncoding(input: FlowInput) {
+  return input.encoding === "auto" ? "utf-8" : input.encoding;
+}
+
+function isAiSampleGenerationWarning(warning: string) {
+  return /(?:AI|編集用).{0,10}サンプル|サンプル.{0,12}(?:生成|作成|使用)(?:でき|され|し)/u.test(warning);
+}
+
 export function aiSampleSignature(sql: string, inputs: FlowInput[]) {
   const value = JSON.stringify({
     sql: sql.trim(),
-    inputs: inputs.map((input) => ({
-      tableName: input.tableName,
-      columns: input.requiredColumns.map((column) => ({ name: column.name, type: column.type })),
-    })),
+    inputs: inputSchemaValue(inputs),
   });
+  return signatureHash(value);
+}
+
+export function inputSchemaSignature(inputs: FlowInput[]) {
+  return signatureHash(JSON.stringify(inputSchemaValue(inputs)));
+}
+
+function inputSchemaValue(inputs: FlowInput[]) {
+  return inputs.map((input) => ({
+    tableName: input.tableName,
+    columns: input.requiredColumns.map((column) => ({ name: column.name, type: column.type })),
+  }));
+}
+
+function signatureHash(value: string) {
   let hash = 2166136261;
   for (let index = 0; index < value.length; index += 1) {
     hash ^= value.charCodeAt(index);

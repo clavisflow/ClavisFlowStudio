@@ -1,21 +1,24 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, ArrowRight, Code2, Copy, ExternalLink, EyeOff, FileJson, FileSpreadsheet, FileText, FlaskConical, Globe2, Link2, LoaderCircle, LogIn, RefreshCw, Sparkles, Trash2, UploadCloud } from "lucide-react";
+import { AlertTriangle, ArrowRight, CheckCircle2, Code2, Copy, ExternalLink, EyeOff, FileJson, FileSpreadsheet, FileText, FlaskConical, Globe2, Link2, LoaderCircle, LogIn, RefreshCw, Sparkles, Trash2, UploadCloud } from "lucide-react";
 import { DataSourceCard, DataSourcePicker, GoogleSheetModal } from "@/components/data-source-ui";
 import { createManagedFlow, deleteManagedFlow, generateFlowSql, loadEditableFlow, loadPublicFlow, normalizeFlowVisibility, publicRunUrl, savedFlowFromPublicationError, setManagedFlowPublished, updateManagedFlow, uploadManagedFlowSamples } from "@/lib/flow-store";
 import type { CsvEncoding, FileAnalysis, FlowDraft, FlowInput, InputColumn, ManagedFlow, PublicFlow, QueryResult } from "@/lib/flow-types";
 import { ProcessingClient } from "@/lib/processing-client";
+import { formatElapsedSeconds } from "@/lib/result-format";
 import { getSampleTemplate, sampleTemplates } from "@/lib/sample-templates";
 import { getBundledSampleFiles } from "@/lib/demo-flow";
 import { inspectSqlStructure } from "@/lib/sql-safety";
 import { ResultTable } from "@/components/result-table";
 import { useAuth } from "@/components/auth-provider";
 import { validateSampleFile } from "@/lib/sample-files";
-import { applyA1Range, jsonTargets, rowsToCsv, type TabularRows } from "@/lib/tabular-data";
+import { applyA1Range, hasExplicitA1StartRow, jsonTargets, rowsToCsv, type TabularRows } from "@/lib/tabular-data";
 import { flowCategories, flowCategoryLabels } from "@/lib/flow-categories";
-import { aiSampleSignature, aiSampleTabularRows, isCurrentAiSample } from "@/lib/ai-edit-samples";
+import { aiGenerationWarnings, aiSampleEncoding, aiSampleSignature, aiSampleTabularRows, inputSchemaSignature, isCurrentAiSample } from "@/lib/ai-edit-samples";
 import { applySqlRequiredColumns } from "@/lib/sql-required-columns";
+import { assignFilesToInputs } from "@/lib/input-file-assignment";
+import { analyzeWithInputRecovery } from "@/lib/input-analysis-recovery";
 
 type WizardStep = 1 | 2 | 3;
 type PreviewResult = Omit<QueryResult, "csv">;
@@ -78,6 +81,7 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
   const [dragging, setDragging] = useState(false);
   const [instruction, setInstruction] = useState("");
   const [generatedInstruction, setGeneratedInstruction] = useState<string>();
+  const [generatedInputSignature, setGeneratedInputSignature] = useState<string>();
   const [hasGeneratedSql, setHasGeneratedSql] = useState(false);
   const [generationConfirmation, setGenerationConfirmation] = useState<"initial" | "regenerate">();
   const [managementConfirmation, setManagementConfirmation] = useState<"unpublish" | "delete">();
@@ -102,9 +106,11 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
   const [preview, setPreview] = useState<PreviewResult>();
   const [downloadUrl, setDownloadUrl] = useState<string>();
   const [notice, setNotice] = useState("");
+  const [noticeKind, setNoticeKind] = useState<"neutral" | "success" | "loading">("neutral");
   const files = useRef<Record<string, File>>({});
   const sourceCollections = useRef<Record<string, EditorSourceCollection>>({});
   const client = useRef<ProcessingClient | null>(null);
+  const noticeTimer = useRef<number | undefined>(undefined);
   const { user, configured: authConfigured, signInWithGoogle } = useAuth();
 
   useEffect(() => {
@@ -120,6 +126,10 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
     if (downloadUrl) URL.revokeObjectURL(downloadUrl);
   }, [downloadUrl]);
 
+  useEffect(() => () => {
+    if (noticeTimer.current !== undefined) window.clearTimeout(noticeTimer.current);
+  }, []);
+
   useEffect(() => {
     if (mode !== "edit") return;
     const publicId = new URL(window.location.href).searchParams.get("flow") ?? "";
@@ -127,11 +137,12 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
     loadEditableFlow(publicId, token)
       .then(async (flow) => {
         const loadedInstruction = flow.instruction ?? flow.description;
-        const loadedDraft: FlowDraft = applySqlRequiredColumns({ name: flow.name, description: flow.description, visibility: normalizeFlowVisibility(flow.visibility), categories: flow.categories ?? [], instruction: loadedInstruction, aiSamples: flow.aiSamples, inputs: flow.inputs.map((input) => ({ ...input, headerRow: input.headerRow ?? 1 })), sql: flow.sql, output: flow.output, duckdbVersion: flow.duckdbVersion });
+        const loadedDraft: FlowDraft = applySqlRequiredColumns({ name: flow.name, description: flow.description, visibility: normalizeFlowVisibility(flow.visibility), categories: flow.categories ?? [], instruction: loadedInstruction, aiSamples: flow.aiSamples, inputs: flow.inputs.map((input) => ({ ...input, headerRow: input.headerRow === undefined ? 1 : input.headerRow })), sql: flow.sql, output: flow.output, duckdbVersion: flow.duckdbVersion });
         setExisting(flow);
         setDraft(loadedDraft);
         setInstruction(loadedInstruction);
         setGeneratedInstruction(loadedInstruction);
+        setGeneratedInputSignature(inputSchemaSignature(loadedDraft.inputs));
         setHasGeneratedSql(true);
         setPublishedSnapshot(editorSnapshot(loadedDraft, loadedInstruction));
         setActiveStep(1);
@@ -171,28 +182,51 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
     }
   }
 
-  async function addFiles(selected: File[]) {
+  function showNotice(message: string, kind: "neutral" | "success" | "loading" = "neutral", autoHide = true) {
+    if (noticeTimer.current !== undefined) window.clearTimeout(noticeTimer.current);
+    setNotice(message);
+    setNoticeKind(kind);
+    noticeTimer.current = autoHide ? window.setTimeout(() => {
+      setNotice("");
+      noticeTimer.current = undefined;
+    }, 4200) : undefined;
+  }
+
+  function hideNotice() {
+    if (noticeTimer.current !== undefined) window.clearTimeout(noticeTimer.current);
+    noticeTimer.current = undefined;
+    setNotice("");
+    setNoticeKind("neutral");
+  }
+
+  async function addFiles(selected: File[], notifySuccess = true) {
     setError(undefined);
     const unassignedInputs = draft.inputs.filter((input) => !files.current[input.id]);
     const validFiles = selected.filter(isSupportedEditorFile);
     if (validFiles.length !== selected.length) setError("CSV、Excel（.xlsx）、JSONのいずれかを選択してください。");
     if (!validFiles.length) return;
+    if (notifySuccess) showNotice(`${validFiles.map((file) => file.name).join("、")}を読み込んでいます…`, "loading", false);
+    try {
     const preparedFiles = await Promise.all(validFiles.map(prepareEditorFile));
-    const existingAssignments = preparedFiles.slice(0, unassignedInputs.length).map((prepared, index) => ({
-      prepared,
-      input: unassignedInputs[index],
-    }));
+    const matched = await assignFilesToInputs(
+      unassignedInputs,
+      preparedFiles.map((prepared) => ({ name: prepared.originalName, file: prepared.file, prepared })),
+    );
+    const existingAssignments = matched.assignments.map(({ input, file }) => ({ prepared: file.prepared, input }));
     const firstNumber = nextTableNumber();
-    const additions = preparedFiles.slice(existingAssignments.length).map((prepared, index) => {
+    const additions = matched.unassignedFiles.map(({ prepared }, index) => {
       const number = firstNumber + index;
       const id = crypto.randomUUID();
       const input: FlowInput = {
         id,
         label: prepared.originalName.replace(/\.(csv|xlsx|json)$/i, ""),
+        fileName: prepared.originalName,
         tableName: `input_${number}`,
         encoding: "auto",
         delimiter: ",",
         headerRow: 1,
+        selectedOption: prepared.selectedOption,
+        range: "",
         requiredColumns: [],
       };
       files.current[id] = prepared.file;
@@ -205,18 +239,41 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
       else delete sourceCollections.current[input.id];
     });
 
-    if (additions.length) {
-      setDraft((current) => ({ ...current, inputs: [...current.inputs, ...additions.map(({ input }) => input)] }));
-    }
+    setDraft((current) => ({
+      ...current,
+      inputs: [
+        ...current.inputs.map((input) => {
+          const assignment = existingAssignments.find((candidate) => candidate.input.id === input.id);
+          return assignment ? { ...input, fileName: assignment.prepared.originalName } : input;
+        }),
+        ...additions.map(({ input }) => input),
+      ],
+    }));
     setFileStates((current) => ({
       ...current,
-      ...Object.fromEntries([...existingAssignments, ...additions].map(({ prepared, input }) => [input.id, editorFileState(input.id, prepared)])),
+      ...Object.fromEntries([...existingAssignments, ...additions].map(({ prepared, input }) => [input.id, editorFileState(input.id, prepared, input)])),
     }));
     clearPreview();
-    await Promise.all([
-      ...existingAssignments.map(({ prepared, input }) => analyzeFile(prepared.file, prepared.converted ? { ...input, encoding: "utf-8", headerRow: 1 } : input, false)),
-      ...additions.map(({ prepared, input }) => analyzeFile(prepared.file, prepared.converted ? { ...input, encoding: "utf-8", headerRow: 1 } : input)),
+    const assignments = [...existingAssignments, ...additions];
+    const analysisResults = await Promise.all([
+      ...existingAssignments.map(({ prepared, input }) => prepared.collection
+        ? selectStructuredOption(
+            input.id,
+            prepared.collection.entries.some((entry) => entry.name === input.selectedOption) ? input.selectedOption! : prepared.selectedOption!,
+            input.range,
+          )
+        : analyzeFile(prepared.file, input)),
+      ...additions.map(({ prepared, input }) => analyzeFile(prepared.file, prepared.converted ? { ...input, encoding: "utf-8", headerRow: prepared.sourceKind === "json" ? 1 : input.headerRow } : input)),
     ]);
+    if (notifySuccess) {
+      const loadedFiles = assignments.filter((_, index) => analysisResults[index]).map(({ prepared }) => prepared.originalName);
+      if (loadedFiles.length > 0) showNotice(`${loadedFiles.join("、")}を読み込みました。`, "success");
+      else hideNotice();
+    }
+    } catch (fileError) {
+      if (notifySuccess) hideNotice();
+      setError(fileError instanceof Error ? fileError.message : "ファイルを読み込めませんでした。");
+    }
   }
 
   async function selectStructuredOption(inputId: string, option: string, rangeOverride?: string, encodingOverride?: CsvEncoding) {
@@ -227,6 +284,7 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
     try {
       const range = rangeOverride ?? fileStates[inputId]?.range ?? "";
       const encoding = encodingOverride ?? input.encoding;
+      const headerRow = hasExplicitA1StartRow(range) ? 1 : input.headerRow === undefined ? 1 : input.headerRow;
       const rows = collection.kind === "excel" || collection.kind === "google" ? applyA1Range(entry.rows, range) : entry.rows;
       const file = await csvFileFromTabularRows(rows, `${collection.originalName}-${entry.name}.csv`, encoding);
       files.current[inputId] = file;
@@ -240,10 +298,17 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
           error: undefined,
         },
       }));
+      setDraft((current) => ({
+        ...current,
+        inputs: current.inputs.map((candidate) => candidate.id === inputId
+          ? { ...candidate, selectedOption: entry.name, range, headerRow }
+          : candidate),
+      }));
       clearPreview();
-      await analyzeFile(file, { ...input, encoding }, mode !== "edit");
+      return await analyzeFile(file, { ...input, encoding, selectedOption: entry.name, range, headerRow });
     } catch (selectionError) {
       setError(selectionError instanceof Error ? selectionError.message : "読み込み対象を変更できませんでした。");
+      return false;
     }
   }
 
@@ -278,6 +343,8 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
           encoding: "utf-8",
           delimiter: ",",
           headerRow: 1,
+          selectedOption: sheets[0].sheet,
+          range: "",
           requiredColumns: [],
         };
         setDraft((current) => ({ ...current, inputs: [...current.inputs, targetDefinition!] }));
@@ -290,10 +357,10 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
       };
       sourceCollections.current[targetId!] = collection;
       const existingState = fileStates[targetId!];
-      const selectedSheet = collection.entries.some((entry) => entry.name === existingState?.selectedOption)
-        ? existingState.selectedOption!
+      const selectedSheet = collection.entries.some((entry) => entry.name === (existingState?.selectedOption ?? targetDefinition.selectedOption))
+        ? (existingState?.selectedOption ?? targetDefinition.selectedOption)!
         : collection.entries[0].name;
-      const range = existingState?.range ?? "";
+      const range = existingState?.range ?? targetDefinition.range ?? "";
       const rows = applyA1Range(collection.entries.find((entry) => entry.name === selectedSheet)!.rows, range);
       const prepared = {
         file: await csvFileFromTabularRows(rows, `${selectedSheet}.csv`, targetDefinition.encoding),
@@ -306,9 +373,10 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
         range,
       };
       files.current[targetId!] = prepared.file;
-      setFileStates((current) => ({ ...current, [targetId!]: editorFileState(targetId!, prepared) }));
+      setFileStates((current) => ({ ...current, [targetId!]: editorFileState(targetId!, prepared, targetDefinition) }));
+      updateInput(targetId!, { selectedOption: selectedSheet, range });
       clearPreview();
-      await analyzeFile(prepared.file, targetDefinition, mode !== "edit");
+      await analyzeFile(prepared.file, targetDefinition);
       setGoogleModalOpen(false);
       setGoogleModalUrl("");
     } catch (googleError) {
@@ -328,7 +396,7 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
         if (!response.ok) throw new Error(`${definition.label}を読み込めませんでした。`);
         return new File([await response.arrayBuffer()], definition.name, { type: "text/csv" });
       }));
-      await addFiles(sampleFiles);
+      await addFiles(sampleFiles, false);
       setDraft((current) => applySqlRequiredColumns({
         ...current,
         name: sample.flowName,
@@ -372,6 +440,7 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
           setDraft(copiedDraft);
           setInstruction(copiedInstruction);
           setGeneratedInstruction(copiedInstruction);
+          setGeneratedInputSignature(inputSchemaSignature(copiedDraft.inputs));
           setHasGeneratedSql(true);
           setSourceSamples(editorSourceSamples(flow));
         })
@@ -411,8 +480,8 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
           [input.id]: { id: input.id, name: file.name, size: file.size, status: "analyzing" },
         }));
       }
-      await Promise.all(prepared.map(({ input, file, converted }) =>
-        analyzeFile(file, converted ? { ...input, encoding: "utf-8", headerRow: 1 } : input, false)));
+      await Promise.all(prepared.map(({ input, file, converted, sourceKind }) =>
+        analyzeFile(file, converted ? { ...input, encoding: "utf-8", headerRow: sourceKind === "json" ? 1 : input.headerRow } : input, false)));
     } catch (sampleError) {
       setError(sampleError instanceof Error ? sampleError.message : "サンプルを読み込めませんでした。");
     } finally {
@@ -432,9 +501,11 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
     try {
       const prepared = await Promise.all(draft.inputs.map(async (input) => {
         const rows = aiSampleTabularRows(aiSamples, input);
+        const encoding = aiSampleEncoding(input);
         return {
           input,
-          file: await csvFileFromTabularRows(rows, `AIサンプル-${input.label}.csv`, "utf-8"),
+          encoding,
+          file: await csvFileFromTabularRows(rows, `AIサンプル-${input.label}.csv`, encoding),
         };
       }));
       for (const { input, file } of prepared) {
@@ -451,7 +522,7 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
           },
         }));
       }
-      await Promise.all(prepared.map(({ input, file }) => analyzeFile(file, { ...input, encoding: "utf-8", headerRow: 1 }, false)));
+      await Promise.all(prepared.map(({ input, file, encoding }) => analyzeFile(file, { ...input, encoding, headerRow: 1 }, false)));
     } catch (sampleError) {
       setError(sampleError instanceof Error ? sampleError.message : "AIサンプルを読み込めませんでした。");
     } finally {
@@ -460,20 +531,39 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
   }
 
   async function analyzeFile(file: File, input: FlowInput, updateDefinition = true) {
-    if (!client.current) return;
+    if (!client.current) return false;
     setFileStates((current) => ({
       ...current,
       [input.id]: { ...(current[input.id] ?? { id: input.id, name: file.name, size: file.size }), status: "analyzing", error: undefined },
     }));
     try {
-      const analysis = await client.current.analyze(file, input.encoding, input.delimiter, input.headerRow ?? 1);
-      const selectedEncoding = input.encoding === "auto" ? analysis.detectedEncoding : input.encoding;
+      const requestedHeaderRow = input.headerRow === undefined ? 1 : input.headerRow;
+      const recovered = await analyzeWithInputRecovery(
+        (encoding, headerRow) => client.current!.analyze(file, encoding, input.delimiter, headerRow),
+        input,
+        input.encoding,
+        requestedHeaderRow,
+      );
+      const { analysis, encoding: selectedEncoding, headerRow: effectiveHeaderRow } = recovered;
+      if (effectiveHeaderRow !== requestedHeaderRow) {
+        setDraft((current) => ({
+          ...current,
+          inputs: current.inputs.map((candidate) => candidate.id === input.id ? { ...candidate, headerRow: effectiveHeaderRow } : candidate),
+        }));
+      }
+      if (selectedEncoding !== input.encoding && !updateDefinition) {
+        setDraft((current) => ({
+          ...current,
+          inputs: current.inputs.map((candidate) => candidate.id === input.id ? { ...candidate, encoding: selectedEncoding } : candidate),
+        }));
+      }
       if (updateDefinition) {
         setDraft((current) => applySqlRequiredColumns({
           ...current,
           inputs: current.inputs.map((candidate) => candidate.id === input.id ? {
             ...candidate,
             encoding: selectedEncoding,
+            headerRow: effectiveHeaderRow,
             requiredColumns: analysis.headers.map((name, index) => ({ name, type: analysis.columnTypes[index] ?? "VARCHAR", required: true })),
           } : candidate),
         }));
@@ -484,11 +574,13 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
         ...current,
         [input.id]: { ...current[input.id], status: analysis.warning || validationError ? "error" : "ready", analysis, error: analysis.warning ?? validationError },
       }));
+      return !analysis.warning && !validationError;
     } catch (analysisError) {
       setFileStates((current) => ({
         ...current,
         [input.id]: { ...current[input.id], status: "error", error: analysisError instanceof Error ? analysisError.message : "CSVを解析できませんでした。" },
       }));
+      return false;
     }
   }
 
@@ -590,7 +682,8 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
     setError(undefined);
     const trimmedInstruction = instruction.trim();
     if (!trimmedInstruction) { setError("やりたい処理を日本語で入力してください。"); return; }
-    const needsGeneration = !draft.sql.trim() || generatedInstruction !== trimmedInstruction;
+    const inputSchemaChanged = generatedInputSignature !== undefined && generatedInputSignature !== inputSchemaSignature(draft.inputs);
+    const needsGeneration = !draft.sql.trim() || generatedInstruction !== trimmedInstruction || inputSchemaChanged;
     if (needsGeneration && !confirmed) {
       setGenerationConfirmation(hasGeneratedSql ? "regenerate" : "initial");
       return;
@@ -603,9 +696,7 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
       if (needsGeneration) {
         const generated = await generateFlowSql(trimmedInstruction, draft.inputs);
         sql = generated.sql;
-        setAiWarnings(generated.samples
-          ? generated.warnings
-          : [...generated.warnings, "編集用AIサンプルを生成できなかったため、SQLだけを使用します。"]);
+        setAiWarnings(aiGenerationWarnings(generated.warnings, Boolean(generated.samples)));
         draftForPreview = applySqlRequiredColumns({
           ...draft,
           sql,
@@ -617,6 +708,7 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
         });
         setDraft(draftForPreview);
         setGeneratedInstruction(trimmedInstruction);
+        setGeneratedInputSignature(inputSchemaSignature(draft.inputs));
         setHasGeneratedSql(true);
       }
       await runPreview(sql, draftForPreview);
@@ -652,7 +744,7 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
         file: files.current[input.id],
         encoding: input.encoding,
         delimiter: input.delimiter,
-        headerRow: input.headerRow ?? 1,
+        headerRow: input.headerRow === undefined ? 1 : input.headerRow,
         columnMapping: Object.fromEntries(input.requiredColumns.filter((column) => column.required).map((column) => [column.name, column.name])),
       })));
       const blob = new Blob([result.csv.buffer as ArrayBuffer], { type: "text/csv" });
@@ -694,12 +786,11 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
     ].join("\n");
     try {
       await navigator.clipboard.writeText(tsv);
-      setNotice("クリップボードにコピーしました。ExcelやGoogleスプレッドシートへ貼り付けられます。");
+      showNotice("クリップボードにコピーしました。ExcelやGoogleスプレッドシートへ貼り付けられます。");
     } catch {
       downloadBlob(new Blob([tsv], { type: "text/tab-separated-values" }), "処理結果.tsv");
-      setNotice("クリップボードへコピーできなかったため、結果をTSVファイルで保存しました。");
+      showNotice("クリップボードへコピーできなかったため、結果をTSVファイルで保存しました。");
     }
-    window.setTimeout(() => setNotice(""), 4200);
   }
 
   async function saveAndPublish() {
@@ -733,6 +824,7 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
       setDraft(preparedDraft);
       setInstruction(publishedInstruction);
       setGeneratedInstruction(publishedInstruction);
+      setGeneratedInputSignature(inputSchemaSignature(preparedDraft.inputs));
       setHasGeneratedSql(true);
       setPublishedSnapshot(editorSnapshot(preparedDraft, publishedInstruction));
       setPublishedResult(result);
@@ -761,7 +853,7 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
     }
     try {
       const rows = aiSampleTabularRows(aiSamples, input);
-      const file = await csvFileFromTabularRows(rows, `AIサンプル-${input.label}.csv`, "utf-8");
+      const file = await csvFileFromTabularRows(rows, `AIサンプル-${input.label}.csv`, aiSampleEncoding(input));
       selectSampleFile(input.id, file);
     } catch (sampleError) {
       setError(sampleError instanceof Error ? sampleError.message : "AIサンプルを準備できませんでした。");
@@ -821,6 +913,8 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
   const hasCompleteSourceSamples = draft.inputs.length > 0 && draft.inputs.every((input) => sourceSamples.some((sample) => sample.inputId === input.id));
   const configuredInputs = draft.inputs.filter((input) => Boolean(files.current[input.id]));
   const hasCurrentAiSample = isCurrentAiSample(draft);
+  const inputSchemaNeedsRegeneration = Boolean(draft.sql.trim()) && generatedInputSignature !== undefined && generatedInputSignature !== inputSchemaSignature(draft.inputs);
+  const previewHasUnappliedInstruction = Boolean(preview && generatedInstruction !== instruction.trim());
 
   return (
     <main className="studio-shell wizard-shell">
@@ -860,7 +954,7 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
 
       <WizardStepper
         activeStep={activeStep}
-        canSelect={(step) => step === 1 || step === 2 && canLeaveStepOne() || step === 3 && Boolean(preview)}
+        canSelect={(step) => step === 1 || step === 2 && canLeaveStepOne() || step === 3 && Boolean(preview) && !previewHasUnappliedInstruction}
         onSelect={(step) => {
           setError(undefined);
           setActiveStep(step);
@@ -968,8 +1062,15 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
                               <input
                                 value={state.range ?? ""}
                                 placeholder="例：A1:D100"
-                                onChange={(event) => setFileStates((current) => ({ ...current, [input.id]: { ...current[input.id], range: event.target.value } }))}
-                                onBlur={() => { if (state.selectedOption) void selectStructuredOption(input.id, state.selectedOption, fileStates[input.id]?.range ?? ""); }}
+                                onChange={(event) => {
+                                  const range = event.target.value;
+                                  setFileStates((current) => ({ ...current, [input.id]: { ...current[input.id], range } }));
+                                  updateInput(input.id, {
+                                    range,
+                                    ...(hasExplicitA1StartRow(range) ? { headerRow: 1 } : {}),
+                                  });
+                                }}
+                                onBlur={(event) => { if (state.selectedOption) void selectStructuredOption(input.id, state.selectedOption, event.currentTarget.value); }}
                               />
                             </label>
                           )}
@@ -979,7 +1080,18 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
                             <label className="field"><span>区切り文字</span><select value={input.delimiter} onChange={(event) => updateInput(input.id, { delimiter: event.target.value as FlowInput["delimiter"] }, true)}><option value=",">カンマ</option><option value="\t">タブ</option><option value=";">セミコロン</option></select></label>
                           )}
                           {hasHeaderRow && (
-                            <label className="field"><span>ヘッダー行</span><input type="number" min={1} max={100} value={input.headerRow ?? 1} onChange={(event) => updateInput(input.id, { headerRow: Math.max(1, Number(event.target.value) || 1) }, true)} /></label>
+                            <label className="field">
+                              <span>ヘッダー行（指定範囲内）</span>
+                              <input
+                                type="number"
+                                min={0}
+                                max={100}
+                                placeholder="なし"
+                                value={input.headerRow ?? ""}
+                                onChange={(event) => updateInput(input.id, { headerRow: Number(event.target.value) > 0 ? Math.floor(Number(event.target.value)) : null })}
+                                onBlur={(event) => updateInput(input.id, { headerRow: Number(event.currentTarget.value) > 0 ? Math.floor(Number(event.currentTarget.value)) : null }, true)}
+                              />
+                            </label>
                           )}
                       </DataSourceCard>
                     );
@@ -1004,7 +1116,7 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
                 <h2 id="processing-settings-title">処理内容</h2>
               </header>
               <div className="processing-card-body">
-                <label className="field instruction-field"><span>やりたいこと <small>（AIが処理を作成します）</small></span><textarea rows={6} maxLength={4000} placeholder="例：請求CSVと入金CSVを請求番号で照合して、未入金や金額の違いが分かるようにして。" value={instruction} onChange={(event) => { setInstruction(event.target.value); setAiWarnings([]); clearPreview(); }} /></label>
+                <label className="field instruction-field"><span>やりたいこと <small>（AIが処理を作成します）</small></span><textarea rows={6} maxLength={4000} placeholder="例：請求CSVと入金CSVを請求番号で照合して、未入金や金額の違いが分かるようにして。" value={instruction} onChange={(event) => setInstruction(event.target.value)} /></label>
                 <div className="processing-source-list">
                 {draft.inputs.map((input) => (
                   <article className="processing-source-card" key={input.id}>
@@ -1033,13 +1145,19 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
                   </article>
                 ))}
                 </div>
+                {inputSchemaNeedsRegeneration && (
+                  <div className="warning-message" role="status">
+                    <strong>入力列が変更されています</strong>
+                    <p>現在のSQLは変更前の列を前提にしています。AIで再判定してから結果を確認してください。</p>
+                  </div>
+                )}
                 {draft.sql && (
                   <details className="sql-adjustment">
                     <summary><Code2 size={18} aria-hidden="true" />AIが生成したSQLを確認・修正</summary>
                     <div className="sql-adjustment-body">
                       <label className="field"><span>DuckDB SQL</span><textarea className="sql-editor" rows={12} spellCheck={false} value={draft.sql} onChange={(event) => { setDraft((current) => applySqlRequiredColumns({ ...current, sql: event.target.value })); setGeneratedInstruction(instruction.trim()); clearPreview(); }} /></label>
-                      <p className="field-help">結果が意図と違う場合だけSQLを修正し、再確認してください。</p>
-                      <button type="button" className="button secondary" aria-busy={previewing && !aiGenerating} disabled={previewing} onClick={() => void runPreview(draft.sql)}>
+                      <p className="field-help">{inputSchemaNeedsRegeneration ? "入力列に合うSQLをAIで再生成すると、手動での再確認が使えます。" : "結果が意図と違う場合だけSQLを修正し、再確認してください。"}</p>
+                      <button type="button" className="button secondary" aria-busy={previewing && !aiGenerating} disabled={previewing || inputSchemaNeedsRegeneration} onClick={() => void runPreview(draft.sql)}>
                         {previewing && !aiGenerating ? <LoaderCircle className="spin-icon" size={18} aria-hidden="true" /> : <RefreshCw size={17} aria-hidden="true" />}
                         {previewing && !aiGenerating ? "再確認しています..." : "修正したSQLで再確認"}
                       </button>
@@ -1049,7 +1167,7 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
                 <div className="processing-card-actions">
                   <button type="button" className="button primary" aria-busy={aiGenerating} disabled={aiGenerating || previewing} onClick={() => void generateAndPreview()}>
                     {aiGenerating ? <LoaderCircle className="spin-icon" size={18} aria-hidden="true" /> : <Sparkles size={18} aria-hidden="true" />}
-                    {aiGenerating ? "結果を確認しています..." : preview ? "変更を反映して再確認" : "結果を確認"}
+                    {aiGenerating ? "結果を確認しています..." : inputSchemaNeedsRegeneration ? "AIで再判定して結果を確認" : preview ? "変更を反映して再確認" : "結果を確認"}
                   </button>
                 </div>
               </div>
@@ -1060,8 +1178,11 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
             {preview && (
               <section className="result-preview-card" aria-labelledby="result-preview-title">
                 <div className="result-toolbar">
-                  <h3 id="result-preview-title">結果プレビュー</h3>
-                  <p className="result-preview-meta">{preview.totalRows.toLocaleString()}件を処理しました（{preview.elapsedMs.toLocaleString()}ms）</p>
+                  <div className="result-preview-heading">
+                    <h3 id="result-preview-title">結果プレビュー</h3>
+                    {previewHasUnappliedInstruction && <span className="result-preview-stale" role="status" aria-label="やりたいことの変更はまだ結果に反映されていません">変更前の結果</span>}
+                  </div>
+                  <p className="result-preview-meta">{preview.totalRows.toLocaleString()}件を処理しました（{formatElapsedSeconds(preview.elapsedMs)}）</p>
                 </div>
                 <ResultTable result={preview} overflowNote="画面は先頭100件のみ表示しています。" />
                 {downloadUrl && (
@@ -1076,7 +1197,7 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
             )}
             <div className="wizard-actions between">
               <button type="button" className="button plain" disabled={previewing} onClick={() => setActiveStep(1)}>戻る</button>
-              <button type="button" className="button primary" disabled={!preview || previewing} onClick={() => { setError(undefined); setActiveStep(3); }}>次へ：公開 <ArrowRight size={17} aria-hidden="true" /></button>
+              <button type="button" className="button primary" disabled={!preview || previewing || previewHasUnappliedInstruction} onClick={() => { setError(undefined); setActiveStep(3); }}>次へ：公開 <ArrowRight size={17} aria-hidden="true" /></button>
             </div>
           </div>
         )}
@@ -1249,7 +1370,7 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
           </div>
         </div>
       )}
-      {notice && <div className="portal-toast" role="status">{notice}</div>}
+      {notice && <div className={`portal-toast ${noticeKind}`} role="status" aria-busy={noticeKind === "loading"}>{noticeKind === "loading" ? <LoaderCircle className="spin-icon" size={19} aria-hidden="true" /> : noticeKind === "success" ? <CheckCircle2 size={19} aria-hidden="true" /> : null}{notice}</div>}
     </main>
   );
 }
@@ -1304,23 +1425,23 @@ function editorSourceSamples(flow: PublicFlow): EditorSourceSample[] {
   });
 }
 
-async function prepareEditorSample(sample: EditorSourceSample): Promise<{ file: File; converted: boolean }> {
+async function prepareEditorSample(sample: EditorSourceSample): Promise<{ file: File; converted: boolean; sourceKind: "csv" | "excel" | "json" }> {
   const response = await fetch(sample.url, sample.editToken ? { headers: { "x-edit-token": sample.editToken } } : undefined);
   if (!response.ok) throw new Error(`${sample.fileName}を読み込めませんでした。`);
   const source = new File([await response.arrayBuffer()], sample.fileName, { type: response.headers.get("content-type") ?? "" });
   const extension = sample.fileName.split(".").pop()?.toLowerCase();
-  if (extension === "csv") return { file: source, converted: false };
+  if (extension === "csv") return { file: source, converted: false, sourceKind: "csv" as const };
   if (extension === "xlsx") {
     const { default: readExcelFile } = await import("read-excel-file/browser");
     const sheets = await readExcelFile(source);
     const first = sheets[0];
     if (!first) throw new Error(`${sample.fileName}に読み込めるシートがありません。`);
-    return { file: await csvFileFromTabularRows(first.data as TabularRows, `${sample.fileName}-${first.sheet}.csv`), converted: true };
+    return { file: await csvFileFromTabularRows(first.data as TabularRows, `${sample.fileName}-${first.sheet}.csv`), converted: true, sourceKind: "excel" as const };
   }
   if (extension === "json") {
     const first = jsonTargets(JSON.parse(await source.text()) as unknown)[0];
     if (!first) throw new Error(`${sample.fileName}に表として読み込めるデータがありません。`);
-    return { file: await csvFileFromTabularRows(first.rows, `${sample.fileName}.csv`), converted: true };
+    return { file: await csvFileFromTabularRows(first.rows, `${sample.fileName}.csv`), converted: true, sourceKind: "json" as const };
   }
   throw new Error("サンプルはCSV、Excel（.xlsx）、JSONに対応しています。");
 }
@@ -1406,16 +1527,21 @@ function editorFileState(
     selectedOption: string;
     range?: string;
   },
+  input?: FlowInput,
 ): EditorFileState {
+  const availableOptions = prepared.collection?.entries.map((entry) => entry.name);
+  const selectedOption = input?.selectedOption && availableOptions?.includes(input.selectedOption)
+    ? input.selectedOption
+    : prepared.selectedOption;
   return {
     id,
     name: prepared.originalName,
     size: prepared.originalSize,
     status: "analyzing",
     sourceKind: prepared.sourceKind,
-    options: prepared.collection?.entries.map((entry) => entry.name),
-    selectedOption: prepared.selectedOption,
-    range: "range" in prepared ? prepared.range : undefined,
+    options: availableOptions,
+    selectedOption,
+    range: "range" in prepared ? prepared.range : input?.range,
   };
 }
 

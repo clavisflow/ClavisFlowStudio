@@ -15,10 +15,13 @@ export interface InputColumn {
 export interface FlowInput {
   id: string;
   label: string;
+  fileName?: string;
   tableName: string;
   encoding: CsvEncoding;
   delimiter: "," | "\t" | ";";
-  headerRow?: number;
+  headerRow?: number | null;
+  selectedOption?: string;
+  range?: string;
   requiredColumns: InputColumn[];
 }
 

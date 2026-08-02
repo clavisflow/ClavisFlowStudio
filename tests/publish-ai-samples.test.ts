@@ -7,6 +7,7 @@ const editor = readFileSync(new URL("../components/flow-editor.tsx", import.meta
 test("公開STEPから生成済みAIサンプルを直接選択できる", () => {
   assert.match(editor, /async function selectAiSampleFile\(input: FlowInput\)/);
   assert.match(editor, /aiSampleTabularRows\(aiSamples, input\)/);
+  assert.match(editor, /csvFileFromTabularRows\(rows, `AIサンプル-\$\{input\.label\}\.csv`, aiSampleEncoding\(input\)\)/);
   assert.match(editor, /hasCurrentAiSample && <button/);
   assert.match(editor, /onClick=\{\(\) => void selectAiSampleFile\(input\)\}/);
   assert.match(editor, /AIサンプルを使う/);

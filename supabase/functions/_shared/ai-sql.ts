@@ -2,6 +2,8 @@ import { HttpError } from "./errors.ts";
 import { assertSafeSql } from "./validation.ts";
 
 const inputColumnTypes = new Set(["VARCHAR", "BIGINT", "DOUBLE", "DATE", "BOOLEAN"]);
+const maxAiSampleColumns = 80;
+const aiSampleRows = 5;
 
 export type AiInputSchema = {
   tableName: string;
@@ -16,15 +18,15 @@ export type GeneratedSql = {
 };
 
 function generatedSqlJsonSchema(inputs: AiInputSchema[]) {
-  const canGenerateSamples = inputs.reduce((total, input) => total + input.columns.length, 0) <= 30;
+  const canGenerateSamples = canGenerateAiSamples(inputs);
   const samplesObject = {
     type: "object",
     properties: Object.fromEntries(inputs.map((input) => [
       input.tableName,
       {
         type: "array",
-        minItems: 5,
-        maxItems: 10,
+        minItems: aiSampleRows,
+        maxItems: aiSampleRows,
         items: {
           type: "object",
           properties: Object.fromEntries(input.columns.map((column) => [
@@ -70,7 +72,7 @@ Rules:
 - Do not invent a column. If the instruction cannot be satisfied with the supplied schema, return the safest useful query and explain the limitation in warnings.
 - summary must be a concise Japanese explanation of the query.
 - warnings must be Japanese messages and may be an empty array.
-- When generateSamples is true, samples must contain 5–10 useful editing rows for every supplied table. When it is false, return samples as null.
+- When generateSamples is true, samples must contain exactly 5 useful editing rows for every supplied table. When it is false, return samples as null and do not add a warning solely about the absence of samples.
 - Every sample row must contain every supplied column and use its declared data type. DATE values must use YYYY-MM-DD.
 - Make JOIN keys match across tables where the query needs matches, while also including a few unmatched, null, duplicate, or boundary cases when useful.
 - Use clearly fictional values only. Never include real personal information, URLs, executable formulas, or secrets.
@@ -117,10 +119,12 @@ export function parseAiInputSchemas(value: unknown): AiInputSchema[] {
 export function buildResponsesRequest(model: string, instruction: string, inputs: AiInputSchema[], reasoningEffort = "low") {
   const allowedEfforts = new Set(["none", "low", "medium", "high", "xhigh", "max"]);
   const effort = allowedEfforts.has(reasoningEffort) ? reasoningEffort : "low";
+  const columnCount = inputs.reduce((total, input) => total + input.columns.length, 0);
+  const generateSamples = canGenerateAiSamples(inputs);
   return {
     model,
     store: false,
-    max_output_tokens: 5000,
+    max_output_tokens: generateSamples ? Math.min(12000, 5000 + columnCount * 100) : 5000,
     reasoning: { effort },
     input: [
       { role: "system", content: systemPrompt },
@@ -129,7 +133,7 @@ export function buildResponsesRequest(model: string, instruction: string, inputs
         content: JSON.stringify({
           instruction,
           inputs,
-          generateSamples: inputs.reduce((total, input) => total + input.columns.length, 0) <= 30,
+          generateSamples,
         }),
       },
     ],
@@ -142,6 +146,10 @@ export function buildResponsesRequest(model: string, instruction: string, inputs
       },
     },
   };
+}
+
+function canGenerateAiSamples(inputs: AiInputSchema[]) {
+  return inputs.reduce((total, input) => total + input.columns.length, 0) <= maxAiSampleColumns;
 }
 
 export function parseResponsesResult(value: unknown, inputs: AiInputSchema[] = []): GeneratedSql {
@@ -189,39 +197,52 @@ export function parseResponsesResult(value: unknown, inputs: AiInputSchema[] = [
     const detail = error instanceof Error ? error.message : "安全性を確認できませんでした。";
     throw new HttpError(422, `生成されたSQLを安全性検査で拒否しました: ${detail}`);
   }
-  const warnings = generated.warnings.map((warning) => String(warning).trim());
-  const samples = parseGeneratedSamples(generated.samples, inputs);
-  if (inputs.length && !samples) warnings.push("編集用AIサンプルを生成できなかったため、SQLだけを使用します。");
+  let warnings = generated.warnings.map((warning) => String(warning).trim());
+  const { samples, failureReason } = parseGeneratedSamples(generated.samples, inputs);
+  if (inputs.length && !samples) {
+    warnings = [
+      ...warnings.filter((warning) => !isAiSampleGenerationWarning(warning)),
+      `${failureReason ?? "AIサンプルを検証できなかった"}ため、編集用AIサンプルを使用できませんでした。SQLだけを使用します。`,
+    ];
+  }
   return { sql, summary, warnings, samples };
 }
 
-function parseGeneratedSamples(value: unknown, inputs: AiInputSchema[]): GeneratedSql["samples"] {
-  if (!inputs.length) return undefined;
+function isAiSampleGenerationWarning(warning: string) {
+  return /(?:AI|編集用).{0,10}サンプル|サンプル.{0,12}(?:生成|作成)(?:でき|され|し)/u.test(warning);
+}
+
+function parseGeneratedSamples(value: unknown, inputs: AiInputSchema[]): { samples?: GeneratedSql["samples"]; failureReason?: string } {
+  if (!inputs.length) return {};
+  const columnCount = inputs.reduce((total, input) => total + input.columns.length, 0);
+  if (!canGenerateAiSamples(inputs)) {
+    return { failureReason: `入力列が合計${columnCount}列あり、生成上限の${maxAiSampleColumns}列を超えている` };
+  }
   try {
-    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("samples");
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("AIがサンプルデータを返さなかった");
     const sampleRecord = value as Record<string, unknown>;
     const expectedTables = new Set(inputs.map((input) => input.tableName));
-    if (Object.keys(sampleRecord).some((tableName) => !expectedTables.has(tableName))) throw new Error("tables");
+    if (Object.keys(sampleRecord).some((tableName) => !expectedTables.has(tableName))) throw new Error("AIが返したサンプルの入力名が一致しなかった");
     const result: NonNullable<GeneratedSql["samples"]> = {};
     for (const input of inputs) {
       const rows = sampleRecord[input.tableName];
-      if (!Array.isArray(rows) || rows.length < 5 || rows.length > 20) throw new Error("rows");
+      if (!Array.isArray(rows) || rows.length < 5 || rows.length > 20) throw new Error("AIが返したサンプルの行数が不足または超過していた");
       const expectedColumns = new Set(input.columns.map((column) => column.name));
       result[input.tableName] = rows.map((candidate) => {
-        if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) throw new Error("row");
+        if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) throw new Error("AIが返したサンプルに表形式ではない行が含まれていた");
         const row = candidate as Record<string, unknown>;
-        if (Object.keys(row).length !== expectedColumns.size || Object.keys(row).some((column) => !expectedColumns.has(column))) throw new Error("columns");
+        if (Object.keys(row).length !== expectedColumns.size || Object.keys(row).some((column) => !expectedColumns.has(column))) throw new Error("AIが返したサンプルの列構成が入力と一致しなかった");
         return Object.fromEntries(input.columns.map((column) => {
           const cell = row[column.name];
-          if (!validSampleValue(cell, column.type)) throw new Error("value");
+          if (!validSampleValue(cell, column.type)) throw new Error("AIが返したサンプルに列のデータ型と合わない値が含まれていた");
           return [column.name, cell];
         }));
       });
     }
-    if (JSON.stringify(result).length > 250_000) throw new Error("size");
-    return result;
-  } catch {
-    return undefined;
+    if (JSON.stringify(result).length > 250_000) throw new Error("AIが返したサンプルのデータ量が上限を超えていた");
+    return { samples: result };
+  } catch (error) {
+    return { failureReason: error instanceof Error ? error.message : "AIサンプルを検証できなかった" };
   }
 }
 
