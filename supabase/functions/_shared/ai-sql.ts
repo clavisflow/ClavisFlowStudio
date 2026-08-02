@@ -65,11 +65,11 @@ Return one read-only query that implements the user's Japanese instruction.
 Rules:
 - Use only the supplied table names and column names.
 - Return exactly one SELECT statement. A WITH clause followed by SELECT is allowed.
-- Quote every supplied table name, column name, and output alias with double quotes.
+- Quote every supplied table name, column name, and output alias with the ASCII double quote character ("). Never substitute Japanese brackets or typographic quotes such as 「, 」, “, or ”.
 - Never use DDL, DML, COPY, PRAGMA, ATTACH, INSTALL, LOAD, external URLs, file readers, table functions, extensions, or multiple statements.
 - Prefer TRY_CAST when a value may not be safely convertible.
 - When a supplied column is VARCHAR, never compare it directly with a numeric or date literal. Parse it with TRY_CAST or an appropriate text transformation first.
-- Japanese text values may contain full-width digits and Latin letters. When normalizing them for a comparison, normalize every relevant character with TRANSLATE; replacing only the digit is insufficient (for example, ２ＬＤＫ must match 2LDK).
+- Preserve text values exactly as written in the user's instruction. Do not add TRANSLATE, REPLACE, UPPER, LOWER, trimming, width conversion, or other value normalization unless the user explicitly requests that normalization.
 - After UNION, UNION ALL, INTERSECT, or EXCEPT, the final ORDER BY may reference only output columns or their positions. If sorting needs CASE or another expression, wrap the complete set operation in a subquery or CTE and apply ORDER BY in an outer SELECT.
 - Give output columns clear Japanese aliases when appropriate.
 - Do not invent a column. If the instruction cannot be satisfied with the supplied schema, return the safest useful query and explain the limitation in warnings.

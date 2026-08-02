@@ -1,3 +1,5 @@
+import type { CsvEncoding } from "./flow-types";
+
 export type TabularCell = string | number | boolean | Date | null | undefined;
 export type TabularRows = TabularCell[][];
 
@@ -11,6 +13,33 @@ export function jsonTargets(value: unknown): Array<{ path: string; rows: Tabular
   const targets: Array<{ path: string; rows: TabularRows }> = [];
   collectJsonTargets(value, "$", targets, 0);
   return targets;
+}
+
+export async function parseJsonBlob(
+  source: Blob,
+  encoding: CsvEncoding = "auto",
+): Promise<{ value: unknown; encoding: Exclude<CsvEncoding, "auto"> }> {
+  const bytes = new Uint8Array(await source.arrayBuffer());
+  const encodings: Array<Exclude<CsvEncoding, "auto">> = encoding === "auto"
+    ? [hasUtf8Bom(bytes) ? "utf-8-bom" : "utf-8", "cp932"]
+    : [encoding];
+  let lastError: unknown;
+
+  for (const candidate of encodings) {
+    try {
+      const text = await decodeJsonBytes(bytes, candidate);
+      return {
+        value: JSON.parse(text.replace(/^\uFEFF/, "")) as unknown,
+        encoding: candidate,
+      };
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  const reason = lastError instanceof Error ? lastError.message : "不明なエラー";
+  const encodingLabel = encoding === "auto" ? "UTF-8またはShift_JIS" : encodingName(encoding);
+  throw new Error(`JSONを${encodingLabel}として読み込めませんでした。JSONの形式または文字コードを確認してください。（${reason}）`);
 }
 
 export function applyA1Range(rows: TabularRows, range: string): TabularRows {
@@ -51,6 +80,23 @@ function collectJsonTargets(value: unknown, path: string, targets: Array<{ path:
 function primitiveValue(value: unknown): TabularCell {
   if (value == null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return value;
   return JSON.stringify(value);
+}
+
+async function decodeJsonBytes(bytes: Uint8Array, encoding: Exclude<CsvEncoding, "auto">) {
+  if (encoding === "utf-8" || encoding === "utf-8-bom") {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  }
+  const { default: iconv } = await import("iconv-lite");
+  return iconv.decode(bytes, "cp932");
+}
+
+function hasUtf8Bom(bytes: Uint8Array) {
+  return bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf;
+}
+
+function encodingName(encoding: Exclude<CsvEncoding, "auto">) {
+  if (encoding === "shift_jis" || encoding === "cp932") return "Shift_JIS";
+  return "UTF-8";
 }
 
 function escapeCsvCell(value: TabularCell) {

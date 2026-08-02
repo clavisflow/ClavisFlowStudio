@@ -19,7 +19,9 @@ test("Responses API request sends schema only and requires structured output", (
   assert.match(serialized, /samples/);
   assert.doesNotMatch(serialized, /CSVの行データ/);
   assert.match(serialized, /VARCHAR.*TRY_CAST/s);
-  assert.match(serialized, /２ＬＤＫ.*2LDK/);
+  assert.match(serialized, /ASCII double quote/);
+  assert.match(serialized, /Preserve text values exactly as written/);
+  assert.match(serialized, /unless the user explicitly requests that normalization/);
   assert.match(serialized, /After UNION.*ORDER BY.*subquery or CTE/s);
 });
 

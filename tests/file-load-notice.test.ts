@@ -24,3 +24,9 @@ test("成功トーストは読みやすい緑色と14pxの文字で表示する"
   assert.match(styles, /\.portal-toast\.success \{ background: #176444; \}/);
   assert.match(styles, /\.portal-toast \{[^}]*position: fixed;[^}]*font-size: 14px;[^}]*line-height: 1\.5;/);
 });
+
+test("JSONは元ファイルから検出した文字コードをドロップダウンへ反映する", () => {
+  assert.match(editor, /encoding: prepared\.sourceEncoding \?\? "auto"/);
+  assert.match(editor, /sourceEncoding: parsed\.encoding/);
+  assert.match(runner, /"json", parsed\.encoding/);
+});

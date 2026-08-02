@@ -1,4 +1,5 @@
 import type { InputColumn } from "./flow-types.ts";
+import { isIdentifierColumnName } from "./column-semantics.ts";
 
 export function analyzeCsv(text: string, delimiter: string, requestedHeaderRow: number | null) {
   const headerRow = requestedHeaderRow === null ? null : Math.max(1, Math.floor(requestedHeaderRow || 1));
@@ -57,7 +58,7 @@ export function analyzeCsv(text: string, delimiter: string, requestedHeaderRow: 
   return {
     headers,
     rowCount,
-    columnTypes: headers.map((_, index) => inferredColumnType(typeProfiles[index])),
+    columnTypes: headers.map((header, index) => inferredColumnType(typeProfiles[index], header)),
     sampleValues: Object.fromEntries(headers.map((header, index) => [
       header,
       samples.map((sample) => sample[index] ?? "").filter(Boolean).slice(0, 3),
@@ -85,8 +86,9 @@ function updateTypeProfiles(profiles: ColumnTypeProfile[], row: string[]) {
   });
 }
 
-function inferredColumnType(profile?: ColumnTypeProfile): InputColumn["type"] {
+function inferredColumnType(profile: ColumnTypeProfile | undefined, header: string): InputColumn["type"] {
   if (!profile?.populated) return "VARCHAR";
+  if (isIdentifierColumnName(header)) return "VARCHAR";
   if (profile.boolean) return "BOOLEAN";
   if (profile.bigint) return "BIGINT";
   if (profile.double) return "DOUBLE";

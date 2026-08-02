@@ -13,7 +13,7 @@ import { inspectSqlStructure } from "@/lib/sql-safety";
 import { ResultTable } from "@/components/result-table";
 import { useAuth } from "@/components/auth-provider";
 import { validateSampleFile } from "@/lib/sample-files";
-import { applyA1Range, hasExplicitA1StartRow, jsonTargets, rowsToCsv, type TabularRows } from "@/lib/tabular-data";
+import { applyA1Range, hasExplicitA1StartRow, jsonTargets, parseJsonBlob, rowsToCsv, type TabularRows } from "@/lib/tabular-data";
 import { flowCategories, flowCategoryLabels } from "@/lib/flow-categories";
 import { aiGenerationWarnings, aiSampleEncoding, aiSampleSignature, aiSampleTabularRows, inputSchemaSignature, isCurrentAiSample } from "@/lib/ai-edit-samples";
 import { applySqlRequiredColumns } from "@/lib/sql-required-columns";
@@ -222,7 +222,7 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
         label: prepared.originalName.replace(/\.(csv|xlsx|json)$/i, ""),
         fileName: prepared.originalName,
         tableName: `input_${number}`,
-        encoding: "auto",
+        encoding: prepared.sourceEncoding ?? "auto",
         delimiter: ",",
         headerRow: 1,
         selectedOption: prepared.selectedOption,
@@ -261,9 +261,10 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
             input.id,
             prepared.collection.entries.some((entry) => entry.name === input.selectedOption) ? input.selectedOption! : prepared.selectedOption!,
             input.range,
+            prepared.sourceEncoding ?? input.encoding,
           )
         : analyzeFile(prepared.file, input)),
-      ...additions.map(({ prepared, input }) => analyzeFile(prepared.file, prepared.converted ? { ...input, encoding: "utf-8", headerRow: prepared.sourceKind === "json" ? 1 : input.headerRow } : input)),
+      ...additions.map(({ prepared, input }) => analyzeFile(prepared.file, prepared.converted ? { ...input, headerRow: prepared.sourceKind === "json" ? 1 : input.headerRow } : input)),
     ]);
     if (notifySuccess) {
       const loadedFiles = assignments.filter((_, index) => analysisResults[index]).map(({ prepared }) => prepared.originalName);
@@ -480,8 +481,8 @@ export function FlowEditor({ mode }: { mode: "create" | "edit" }) {
           [input.id]: { id: input.id, name: file.name, size: file.size, status: "analyzing" },
         }));
       }
-      await Promise.all(prepared.map(({ input, file, converted, sourceKind }) =>
-        analyzeFile(file, converted ? { ...input, encoding: "utf-8", headerRow: sourceKind === "json" ? 1 : input.headerRow } : input, false)));
+      await Promise.all(prepared.map(({ input, file, converted, sourceKind, sourceEncoding }) =>
+        analyzeFile(file, converted ? { ...input, encoding: sourceEncoding ?? "utf-8", headerRow: sourceKind === "json" ? 1 : input.headerRow } : input, false)));
     } catch (sampleError) {
       setError(sampleError instanceof Error ? sampleError.message : "サンプルを読み込めませんでした。");
     } finally {
@@ -1425,7 +1426,12 @@ function editorSourceSamples(flow: PublicFlow): EditorSourceSample[] {
   });
 }
 
-async function prepareEditorSample(sample: EditorSourceSample): Promise<{ file: File; converted: boolean; sourceKind: "csv" | "excel" | "json" }> {
+async function prepareEditorSample(sample: EditorSourceSample): Promise<{
+  file: File;
+  converted: boolean;
+  sourceKind: "csv" | "excel" | "json";
+  sourceEncoding?: Exclude<CsvEncoding, "auto">;
+}> {
   const response = await fetch(sample.url, sample.editToken ? { headers: { "x-edit-token": sample.editToken } } : undefined);
   if (!response.ok) throw new Error(`${sample.fileName}を読み込めませんでした。`);
   const source = new File([await response.arrayBuffer()], sample.fileName, { type: response.headers.get("content-type") ?? "" });
@@ -1439,9 +1445,15 @@ async function prepareEditorSample(sample: EditorSourceSample): Promise<{ file: 
     return { file: await csvFileFromTabularRows(first.data as TabularRows, `${sample.fileName}-${first.sheet}.csv`), converted: true, sourceKind: "excel" as const };
   }
   if (extension === "json") {
-    const first = jsonTargets(JSON.parse(await source.text()) as unknown)[0];
+    const parsed = await parseJsonBlob(source);
+    const first = jsonTargets(parsed.value)[0];
     if (!first) throw new Error(`${sample.fileName}に表として読み込めるデータがありません。`);
-    return { file: await csvFileFromTabularRows(first.rows, `${sample.fileName}.csv`), converted: true, sourceKind: "json" as const };
+    return {
+      file: await csvFileFromTabularRows(first.rows, `${sample.fileName}.csv`, parsed.encoding),
+      converted: true,
+      sourceKind: "json" as const,
+      sourceEncoding: parsed.encoding,
+    };
   }
   throw new Error("サンプルはCSV、Excel（.xlsx）、JSONに対応しています。");
 }
@@ -1470,6 +1482,7 @@ async function prepareEditorFile(file: File) {
       originalSize: file.size,
       sourceKind: "csv" as const,
       converted: false,
+      sourceEncoding: undefined,
       selectedOption: undefined,
     };
   }
@@ -1489,12 +1502,14 @@ async function prepareEditorFile(file: File) {
       originalSize: file.size,
       sourceKind: "excel" as const,
       converted: true,
+      sourceEncoding: undefined,
       collection,
       selectedOption: collection.entries[0].name,
     };
   }
   if (extension === "json") {
-    const targets = jsonTargets(JSON.parse(await file.text()) as unknown);
+    const parsed = await parseJsonBlob(file);
+    const targets = jsonTargets(parsed.value);
     if (!targets.length) throw new Error(`${file.name}に表として読み込めるオブジェクト配列がありません。`);
     const collection: EditorSourceCollection = {
       kind: "json",
@@ -1503,11 +1518,12 @@ async function prepareEditorFile(file: File) {
       entries: targets.map((target) => ({ name: target.path, rows: target.rows })),
     };
     return {
-      file: await csvFileFromTabularRows(collection.entries[0].rows, `${file.name}.csv`),
+      file: await csvFileFromTabularRows(collection.entries[0].rows, `${file.name}.csv`, parsed.encoding),
       originalName: file.name,
       originalSize: file.size,
       sourceKind: "json" as const,
       converted: true,
+      sourceEncoding: parsed.encoding,
       collection,
       selectedOption: collection.entries[0].name,
     };

@@ -1,20 +1,24 @@
 import type { ResultColumnKind } from "./flow-types.ts";
+import { isIdentifierColumnName } from "./column-semantics.ts";
 
 export function formatElapsedSeconds(elapsedMs: number) {
   return `${(elapsedMs / 1000).toLocaleString("ja-JP", { minimumFractionDigits: 1, maximumFractionDigits: 3 })}秒`;
 }
 
-export function resultColumnKind(typeName: string): ResultColumnKind {
+export function resultColumnKind(typeName: string, columnName?: string): ResultColumnKind {
   const normalized = typeName.toLowerCase();
   if (normalized.includes("timestamp")) return "datetime";
   if (normalized.includes("date")) return "date";
   if (/\b(bool|boolean)\b/.test(normalized)) return "boolean";
-  if (/(u?int|float|double|decimal|numeric|real)/.test(normalized)) return "number";
+  if (/(u?int|float|double|decimal|numeric|real)/.test(normalized)) {
+    return columnName && isIdentifierColumnName(columnName) ? "text" : "number";
+  }
   return "text";
 }
 
 export function normalizeResultValue(value: unknown, kind: ResultColumnKind): string | number | boolean | null {
   if (value == null) return null;
+  if (kind === "text") return typeof value === "string" ? value : String(value);
   if (kind === "date") return normalizeDate(value, false);
   if (kind === "datetime") return normalizeDate(value, true);
   if (typeof value === "bigint") return value.toString();
@@ -24,12 +28,14 @@ export function normalizeResultValue(value: unknown, kind: ResultColumnKind): st
 }
 
 export function isNumericResultValue(value: unknown, kind?: ResultColumnKind) {
+  if (kind === "text") return false;
   if (kind === "number") return true;
   return (typeof value === "number" && Number.isFinite(value)) || typeof value === "bigint";
 }
 
 export function formatResultValue(value: unknown, kind?: ResultColumnKind) {
   if (value == null) return "—";
+  if (kind === "text") return String(value);
   if (kind === "date") return formatIsoDate(String(value));
   if (kind === "datetime") return formatIsoDateTime(String(value));
   if (kind === "number" && typeof value === "string") return formatNumericString(value);

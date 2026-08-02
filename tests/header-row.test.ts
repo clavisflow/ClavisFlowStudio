@@ -30,6 +30,15 @@ test("列型は先頭500行だけでなく全データ行から判定する", ()
   assert.deepEqual(result.sampleValues.所要時間.slice(0, 3), ["1", "2", "3"]);
 });
 
+test("番号やコードは数字だけでも識別子として文字列にする", () => {
+  const result = analyzeCsv(
+    "corporationNo,企業名,落札件数,落札総額\n7010001008844,株式会社日立製作所,6,18621179823\n",
+    ",",
+    1,
+  );
+  assert.deepEqual(result.columnTypes, ["VARCHAR", "VARCHAR", "BIGINT", "BIGINT"]);
+});
+
 test("作成画面と実行画面は範囲内ヘッダーと空欄を扱う", async () => {
   const [editor, runner, duckDbCsv] = await Promise.all([
     readFile(new URL("../components/flow-editor.tsx", import.meta.url), "utf8"),

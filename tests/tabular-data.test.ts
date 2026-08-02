@@ -1,12 +1,34 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyA1Range, hasExplicitA1StartRow, jsonTargets, rowsToCsv } from "../lib/tabular-data.ts";
+import iconv from "iconv-lite";
+import { applyA1Range, hasExplicitA1StartRow, jsonTargets, parseJsonBlob, rowsToCsv } from "../lib/tabular-data.ts";
 
 test("JSON内のオブジェクト配列を読み込み対象として抽出する", () => {
   const targets = jsonTargets({ payload: { items: [{ id: 1, name: "商品A" }, { id: 2, name: "商品B" }] } });
   assert.equal(targets.length, 1);
   assert.equal(targets[0].path, "$.payload.items");
   assert.deepEqual(targets[0].rows, [["id", "name"], [1, "商品A"], [2, "商品B"]]);
+});
+
+test("Shift_JISのJSONを自動判定して読み込む", async () => {
+  const encoded = iconv.encode(JSON.stringify({ items: [{ name: "東京都", value: 1 }] }), "cp932");
+  const parsed = await parseJsonBlob(new Blob([new Uint8Array(encoded)]));
+  assert.equal(parsed.encoding, "cp932");
+  assert.deepEqual(parsed.value, { items: [{ name: "東京都", value: 1 }] });
+});
+
+test("指定されたShift_JISでJSONを読み込む", async () => {
+  const encoded = iconv.encode(JSON.stringify([{ name: "大阪府" }]), "cp932");
+  const parsed = await parseJsonBlob(new Blob([new Uint8Array(encoded)]), "shift_jis");
+  assert.equal(parsed.encoding, "shift_jis");
+  assert.deepEqual(parsed.value, [{ name: "大阪府" }]);
+});
+
+test("読めないJSONでは形式または文字コードを案内する", async () => {
+  await assert.rejects(
+    parseJsonBlob(new Blob(["{broken"])),
+    /JSONの形式または文字コードを確認してください/,
+  );
 });
 
 test("A1形式の範囲で表データを切り出す", () => {

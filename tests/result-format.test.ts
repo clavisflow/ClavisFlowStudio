@@ -15,6 +15,16 @@ test("DuckDB numeric result types are formatted with grouping separators", () =>
   assert.equal(formatResultValue("-15000.50", "number"), "-15,000.50");
 });
 
+test("法人番号などの識別子列は数値型でも文字列表示にする", () => {
+  assert.equal(resultColumnKind("Int64", "法人番号"), "text");
+  assert.equal(resultColumnKind("Int64", "corporationNo"), "text");
+  assert.equal(resultColumnKind("Int64", "corporationCode"), "text");
+  assert.equal(resultColumnKind("Int64", "corporation_code"), "text");
+  assert.equal(resultColumnKind("Int64", "都道府県コード"), "text");
+  assert.equal(resultColumnKind("Int64", "落札件数"), "number");
+  assert.equal(formatResultValue(7_010_001_008_844n, "text"), "7010001008844");
+});
+
 test("DuckDB DATE milliseconds become an unambiguous calendar date", () => {
   assert.equal(resultColumnKind("Date64<MILLISECOND>"), "date");
   assert.equal(normalizeResultValue(1_783_641_600_000, "date"), "2026-07-10");

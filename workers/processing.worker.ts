@@ -188,7 +188,7 @@ async function executeFlow(message: RunMessage): Promise<QueryResult> {
     const table = await connection.query(message.flow.sql);
     if (table.numRows > MAX_OUTPUT_ROWS) throw new Error(`結果が${MAX_OUTPUT_ROWS.toLocaleString()}行を超えました。条件を絞ってください。`);
     const columns = table.schema.fields.map((field) => field.name);
-    const columnKinds = Object.fromEntries(table.schema.fields.map((field) => [field.name, resultColumnKind(field.type.toString())]));
+    const columnKinds = Object.fromEntries(table.schema.fields.map((field) => [field.name, resultColumnKind(field.type.toString(), field.name)]));
     const records = table.toArray().map((row) => normalizeRow(row, columns, columnKinds));
     return buildQueryResult(columns, columnKinds, records, table.numRows, message.flow.output.encoding, Math.round(performance.now() - started));
   } finally {

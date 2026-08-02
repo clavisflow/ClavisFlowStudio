@@ -32,7 +32,7 @@ import { splitHttpLinks } from "@/lib/text-links";
 import { ResultTable } from "@/components/result-table";
 import { recordSuccessfulRun } from "@/lib/portal-activity";
 import { recordFlowUsage } from "@/lib/usage-store";
-import { applyA1Range, hasExplicitA1StartRow, jsonTargets, rowsToCsv, type TabularRows } from "@/lib/tabular-data";
+import { applyA1Range, hasExplicitA1StartRow, jsonTargets, parseJsonBlob, rowsToCsv, type TabularRows } from "@/lib/tabular-data";
 
 type DataSourceKind = "file" | "google";
 type FileKind = "csv" | "excel" | "json" | "google";
@@ -247,9 +247,9 @@ export function FlowRunner() {
       return false;
     }
     try {
+      const state = inputStates[input.id] ?? emptyInputState(input);
       if (extension === "csv") {
         delete sourceCollections.current[input.id];
-        const state = inputStates[input.id] ?? emptyInputState(input);
         return await analyzePrepared(input, file, {
           sourceKind: "file",
           fileKind: "csv",
@@ -272,8 +272,8 @@ export function FlowRunner() {
           : collection.entries[0]?.name ?? "";
         return await selectStructuredSource(input, selected, file.name, file.size, "excel");
       }
-      const parsed = JSON.parse(await file.text()) as unknown;
-      const targets = jsonTargets(parsed);
+      const parsed = await parseJsonBlob(file, state.encoding);
+      const targets = jsonTargets(parsed.value);
       if (!targets.length) throw new Error("表として読み込めるオブジェクト配列がJSON内にありません。");
       const collection: SourceCollection = {
         kind: "json",
@@ -283,7 +283,7 @@ export function FlowRunner() {
       const selected = collection.entries.some((entry) => entry.name === input.selectedOption)
         ? input.selectedOption!
         : collection.entries[0].name;
-      return await selectStructuredSource(input, selected, file.name, file.size, "json");
+      return await selectStructuredSource(input, selected, file.name, file.size, "json", parsed.encoding);
     } catch (fileError) {
       setInputStates((current) => ({
         ...current,
@@ -301,14 +301,22 @@ export function FlowRunner() {
     }
   }
 
-  async function selectStructuredSource(input: FlowInput, option: string, originalName: string, size: number, kind: "excel" | "json") {
+  async function selectStructuredSource(
+    input: FlowInput,
+    option: string,
+    originalName: string,
+    size: number,
+    kind: "excel" | "json",
+    encodingOverride?: CsvEncoding,
+  ) {
     const collection = sourceCollections.current[input.id];
     const entry = collection?.entries.find((candidate) => candidate.name === option);
     if (!collection || !entry) return false;
     const state = inputStates[input.id] ?? emptyInputState(input);
     const headerRow = kind === "excel" && hasExplicitA1StartRow(state.range ?? "") ? 1 : state.headerRow;
     const rows = kind === "excel" ? applyA1Range(entry.rows, state.range ?? "") : entry.rows;
-    const csvFile = await csvFileFromRows(rows, `${originalName}-${entry.name}.csv`, state.encoding);
+    const encoding = encodingOverride ?? state.encoding;
+    const csvFile = await csvFileFromRows(rows, `${originalName}-${entry.name}.csv`, encoding);
     return await analyzePrepared(input, csvFile, {
       sourceKind: "file",
       fileKind: kind,
@@ -319,7 +327,7 @@ export function FlowRunner() {
       range: state.range,
       headerRow,
       delimiter: state.delimiter,
-    }, state.encoding === "auto" ? "utf-8" : state.encoding);
+    }, encoding === "auto" ? "utf-8" : encoding);
   }
 
   async function loadGoogleSheet(input: FlowInput, urlOverride?: string) {
@@ -642,14 +650,15 @@ export function FlowRunner() {
       encoding = encoding === "auto" ? "utf-8" : encoding;
       if (hasExplicitA1StartRow(range)) headerRow = 1;
     } else if (extension === "json") {
-      const targets = jsonTargets(JSON.parse(await sourceFile.text()) as unknown);
+      const parsed = await parseJsonBlob(sourceFile, encoding);
+      const targets = jsonTargets(parsed.value);
       const selected = targets.find((target) => target.path === input.selectedOption) ?? targets[0];
       if (!selected) throw new Error(`${sourceFile.name}に表として読み込めるデータがありません。`);
       options = targets.map((target) => target.path);
       selectedOption = selected.path;
+      encoding = parsed.encoding;
       preparedFile = await csvFileFromRows(selected.rows, "sample.json.csv", encoding);
       fileKind = "json";
-      encoding = encoding === "auto" ? "utf-8" : encoding;
       headerRow = 1;
     } else if (extension !== "csv") {
       throw new Error("サンプルはCSV、Excel（.xlsx）、JSONに対応しています。");
