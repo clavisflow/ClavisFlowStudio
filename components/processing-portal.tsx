@@ -94,7 +94,6 @@ export function ProcessingPortal() {
   const [favoritesOnly, setFavoritesOnly] = useState(false);
   const [officialOnly, setOfficialOnly] = useState(false);
   const [visibleProcessCount, setVisibleProcessCount] = useState(INITIAL_PROCESS_COUNT);
-  const [notice, setNotice] = useState("");
   const [publishedFlows, setPublishedFlows] = useState<PublicFlowSummary[]>([]);
   const [favoriteCounts, setFavoriteCounts] = useState<FavoriteCounts>({});
   const [usageCounts, setUsageCounts] = useState<FlowUsageCounts>({});
@@ -233,11 +232,6 @@ export function ProcessingPortal() {
     requestAnimationFrame(() => document.querySelector("#discover")?.scrollIntoView({ behavior: "smooth", block: "start" }));
   }
 
-  function showNotice(message: string) {
-    setNotice(message);
-    window.setTimeout(() => setNotice(""), 2400);
-  }
-
   function resetFilters() {
     setQuery("");
     setCategory("すべて");
@@ -248,7 +242,7 @@ export function ProcessingPortal() {
 
   return (
     <div className="portal portal-app-shell">
-      <PortalSidebar onCategory={chooseCategory} onAllProcesses={resetFilters} onFavorites={showFavorites} onOfficial={showOfficial} onGuide={() => showNotice("使い方ガイドは準備中です")} />
+      <PortalSidebar onCategory={chooseCategory} onAllProcesses={resetFilters} onFavorites={showFavorites} onOfficial={showOfficial} />
 
       <main className="portal-main portal-shell-main" id="top">
         <PortalHeader query={query} onQueryChange={changeQuery} onSearchSubmit={showSearchResults} />
@@ -307,7 +301,6 @@ export function ProcessingPortal() {
         </div>
         <SiteFooter />
       </main>
-      {notice && <div className="portal-toast" role="status">{notice}</div>}
     </div>
   );
 }
