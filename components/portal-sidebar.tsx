@@ -81,7 +81,7 @@ export function PortalSidebar({ onCategory, onAllProcesses, onFavorites, onOffic
           <Link className="portal-create-card" href="/flows/new/" onClick={closeDrawer}>
             <span><Plus /></span><div><strong>自分の処理を作る</strong><small>処理を作成・公開</small></div>
           </Link>
-          <Link className="portal-nav-item" href="/features/" onClick={closeDrawer}><Lightbulb /><span>ClavisFlowでできること</span></Link>
+          <Link className="portal-nav-item" href="/features/" onClick={closeDrawer}><Lightbulb /><span>Studioでできること</span></Link>
         </div>
       </aside>
     </>

@@ -14,7 +14,7 @@ import { PortalSidebar } from "@/components/portal-sidebar";
 import { SiteFooter } from "@/components/site-footer";
 
 export const metadata: Metadata = {
-  title: "ClavisFlowでできること | ClavisFlow Studio",
+  title: "できること | ClavisFlow Studio",
   description: "データの形式を越えて、作った処理を何度でも使い回す。ClavisFlow Studioでデータ処理が変わる5つの理由を紹介します。",
   openGraph: {
     title: "データ処理が変わる、5つの理由。 | ClavisFlow Studio",
@@ -35,7 +35,7 @@ const features = [
     icon: Files,
     shortTitle: "形式を越える",
     title: "違うデータ形式を、同じように扱える",
-    description: "CSV、Excel、JSON、Googleスプレッドシートなど、入口が違っても表データとして共通のFlowへつなげられます。複数のデータをまとめて、照合や結合をすることもできます。",
+    description: "CSV、Excel、JSON、Googleスプレッドシートなど、種類が違っても入力データとして共通のFlowへつなげられます。複数のデータをまとめて、照合や結合をすることもできます。",
     visual: (
       <KoboyoIllustration name="person-connecting-two-systems" label="異なる2つの仕組みをつなぐ人物" />
     ),
@@ -102,7 +102,7 @@ export default function FeaturesPage() {
 
         <div className="features-content">
           <header className="features-hero">
-            <p className="features-eyebrow"><Sparkles size={17} aria-hidden="true" />ClavisFlowでできること</p>
+            <p className="features-eyebrow"><Sparkles size={17} aria-hidden="true" />ClavisFlow Studioでできること</p>
             <h1>データ処理が変わる、5つの理由。</h1>
             <p className="features-lead">データはバラバラでも、処理はひとつ。<br />ClavisFlow Studioは、形式やツールに縛られず、処理を見つけて、作って、何度でも使える場所です。</p>
           </header>
