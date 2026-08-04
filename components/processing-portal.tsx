@@ -252,10 +252,8 @@ export function ProcessingPortal() {
             <div className="portal-hero-copy">
               <p className="portal-eyebrow"><Sparkles size={15} /> みんなの処理を、自分の仕事に</p>
               <h1 id="hero-title">データ処理が見つかる。<br />なければ作れる。</h1>
-              <p>Excel・CSV・JSON・Googleスプレッドシートなど、<br className="portal-desktop-break" />さまざまなデータに対応しています。</p>
               <div className="portal-hero-actions">
-                <a className="portal-button primary" href="#recommended" suppressHydrationWarning>おすすめの処理を使ってみる <ArrowRight size={17} /></a>
-                <Link className="portal-button secondary" href="/flows/new/">自分の処理を作る</Link>
+                <Link className="portal-button primary" href="/features/">Studioでできること<ArrowRight size={17} /></Link>
               </div>
             </div>
             <HeroVisual />
